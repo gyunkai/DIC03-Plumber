@@ -1,6 +1,6 @@
 import { Send } from "lucide-react";
 
-export default function Chatpage() {
+export default function ChatPage() {
     return (
         <div className="w-full h-screen bg-white rounded-3xl overflow-hidden flex flex-col">
             <div className="flex flex-1 flex-col md:flex-row">
@@ -27,7 +27,7 @@ export default function Chatpage() {
                 <div className="flex-1 flex flex-col p-4 relative">
                     {/* NYU Logo */}
                     <div className="absolute top-[40%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-                        <img src="/images/nyu-logo.png" alt="NYU Logo" className="w-40 h-auto object-contain" />
+                        <img src="/nyu-logo.png" alt="NYU Logo" className="w-40 h-auto object-contain" />
                     </div>
                     
                     {/* Chat Input */}
