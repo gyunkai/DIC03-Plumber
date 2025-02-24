@@ -14,7 +14,7 @@ export default function LandingPage() {
             {/* Navbar */}
             <div className="w-full flex items-center justify-between px-8 md:px-16 py-6">
                 <div className="flex items-center space-x-4">
-                    <img className="w-24 md:w-36" src="/nyu-logo.png" alt="Logo"/>
+                    <img className="w-24 md:w-36" src="/image/nyu-logo.png" alt="Logo"/>
                     <div className="text-white text-2xl md:text-3xl font-black font-['Poppins']">Project Kiwi</div>
                 </div>
             </div>
