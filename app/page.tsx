@@ -6,7 +6,7 @@ export default function LandingPage() {
     const router = useRouter();
 
     const handleStartChatting = () => {
-        router.push('/ChatPage');
+        router.push('/LoginPage');
     };
 
     return (
