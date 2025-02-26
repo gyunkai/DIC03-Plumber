@@ -13,10 +13,10 @@ const LoginPage = () => {
     <div className="flex w-full min-h-screen">
       {/* LEFT COLUMN */}
       <div className="w-full md:w-1/2 flex flex-col items-center justify-center bg-cover bg-center relative"
-           style={{ backgroundImage: 'url("/frame-1.png")' }}>
+           style={{ backgroundImage: 'url("/image/frame-1.png")' }}>
         {/* NYU Logo */}
         <img
-          src="/nyu-logo.png"
+          src="/image/nyu-logo.png"
           alt="NYU logo"
           className="absolute top-4 left-4 w-40 h-auto object-contain"
         />
