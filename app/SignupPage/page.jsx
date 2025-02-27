@@ -1,62 +1,94 @@
-/*
-'use client';
+"use client";
+import { useRouter } from "next/navigation";
 import React from "react";
-//import NYULogo from "./NYU-logo.png";
-import deliveryRafiki2 from "./delivery-rafiki-2.png";
-import hide from "./hide.png";
-import image from "./image.png";
-import line3 from "./line-3.svg";
-import "./style.css";
 
-export const SignUpPage = () => {
-    return (
-        <div className="sign-up-page">
-            <div className="div">
-                <div className="frame">
-                    <img
-                        className="delivery-rafiki"
-                        alt="Delivery rafiki"
-                        src={deliveryRafiki2}
-                    />
+const SignUpPage = () => {
+  const router = useRouter();
 
-                    <img className="NYU-logo" alt="Nyu logo" src="/NYU-logo.png" />
-                </div>
+  const handleContinue = () => {
+    // Adjust this route to whatever page you want to go after signup
+    router.push("/ChatPage");
+  };
 
-                <div className="group">
-                    <p className="text-wrapper">
-                        Become a member and enjoy exclusive promotions.
-                    </p>
+  return (
+    <div className="flex w-full min-h-screen">
+      {/* LEFT COLUMN */}
+      <div className="relative w-full md:w-1/2 flex flex-col items-center justify-center bg-[#c6c7f8] p-6">
+        {/* NYU Logo in upper-left */}
+        <img
+          src="/image/nyu-logo.png"
+          alt="NYU logo"
+          className="absolute top-4 left-4 w-40 h-auto object-contain"
+        />
 
-                    <div className="text-wrapper-2">Account Signup</div>
+        {/* Main illustration */}
+        <img
+          src="/image/delivery-rafiki-2.png"
+          alt="Delivery illustration"
+          className="w-2/3 md:w-1/2 object-cover"
+        />
+      </div>
 
-                    <div className="rectangle" />
+      {/* RIGHT COLUMN */}
+      <div className="w-full md:w-1/2 flex flex-col justify-center p-6">
+        <h2 className="text-black text-2xl font-bold mt-4">Account Signup</h2>
+        <p className="text-gray-500 text-base leading-6 mt-2">
+          Become a member and enjoy exclusive promotions.
+        </p>
 
-                    <div className="rectangle-2" />
+        <form className="flex flex-col gap-4 mt-6">
+          {/* Full Name */}
+          <label className="flex flex-col">
+            <span className="text-gray-600 font-medium">Full Name</span>
+            <input
+              type="text"
+              className="mt-1 p-2 border border-gray-400 rounded-md"
+              placeholder="Enter your full name"
+            />
+          </label>
 
-                    <div className="overlap">
-                        <img className="hide" alt="Hide" src={image} />
-                    </div>
+          {/* Email Address */}
+          <label className="flex flex-col">
+            <span className="text-gray-600 font-medium">Email Address</span>
+            <input
+              type="email"
+              className="mt-1 p-2 border border-gray-400 rounded-md"
+              placeholder="Enter your email"
+            />
+          </label>
 
-                    <div className="overlap-group">
-                        <div className="text-wrapper-3">Contine</div>
-                    </div>
+          {/* Password */}
+          <label className="flex flex-col">
+            <span className="text-gray-600 font-medium">Password</span>
+            <input
+              type="password"
+              className="mt-1 p-2 border border-gray-400 rounded-md"
+              placeholder="Enter a password"
+            />
+          </label>
 
-                    <div className="text-wrapper-4">Full Name</div>
+          {/* Confirm Password */}
+          <label className="flex flex-col">
+            <span className="text-gray-600 font-medium">Confirm Password</span>
+            <input
+              type="password"
+              className="mt-1 p-2 border border-gray-400 rounded-md"
+              placeholder="Re-enter your password"
+            />
+          </label>
 
-                    <div className="text-wrapper-5">Email Address</div>
-
-                    <div className="text-wrapper-6">Password</div>
-
-                    <div className="hide-wrapper">
-                        <img className="img" alt="Hide" src={hide} />
-                    </div>
-
-                    <div className="text-wrapper-7">Confirm Password</div>
-
-                    <img className="line" alt="Line" src={line3} />
-                </div>
-            </div>
-        </div>
-    );
+          {/* Continue Button */}
+          <button
+            type="button"
+            onClick={handleContinue}
+            className="bg-[#c6c7f8] text-white font-medium rounded-md h-12 w-full"
+          >
+            Continue
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 };
-*/
+
+export default SignUpPage;
