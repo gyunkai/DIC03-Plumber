@@ -6,21 +6,26 @@ const LoginPage = () => {
   const router = useRouter();
 
   const handleAccountClick = () => {
-    router.push("/ChatPage");
+    router.push("/SignupPage");
   };
 
   return (
     <div className="flex w-full min-h-screen">
       {/* LEFT COLUMN */}
-      <div className="w-full md:w-1/2 flex flex-col items-center justify-center bg-cover bg-center relative"
-           style={{ backgroundImage: 'url("/image/frame-1.png")' }}>
-        {/* NYU Logo */}
+      <div className="relative w-full md:w-1/2 flex flex-col items-center justify-center bg-[#c6c7f8] p-6">
+        {/* NYU Logo in upper-left */}
         <img
           src="/image/nyu-logo.png"
           alt="NYU logo"
           className="absolute top-4 left-4 w-40 h-auto object-contain"
         />
 
+        {/* Main illustration */}
+        <img
+          src="/image/electrician-amico-1.png"
+          alt="Delivery illustration"
+          className="w-2/3 md:w-1/2 object-cover"
+        />
       </div>
 
       {/* RIGHT COLUMN */}
