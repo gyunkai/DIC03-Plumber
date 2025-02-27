@@ -69,7 +69,7 @@ const LoginPage = () => {
               className="text-blue-600 cursor-pointer"
               onClick={handleAccountClick}
             >
-              Sign up here
+              Creat an account
             </span>
           </p>
         </form>
