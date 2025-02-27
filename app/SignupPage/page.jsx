@@ -31,9 +31,9 @@ const SignUpPage = () => {
 
       {/* RIGHT COLUMN */}
       <div className="w-full md:w-1/2 flex flex-col justify-center p-6">
-        <h2 className="text-black text-2xl font-bold mt-4">Account Signup</h2>
+        <h2 className="text-black text-2xl font-bold mt-4">Create a Kiwi Account</h2>
         <p className="text-gray-500 text-base leading-6 mt-2">
-          Become a member and enjoy exclusive promotions.
+          Become a member and enjoy your personal tutor for Computer Science & Data Science.
         </p>
 
         <form className="flex flex-col gap-4 mt-6">
