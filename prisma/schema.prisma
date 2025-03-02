@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL2")
+
+}
+
+// oauthId refers to userId in the old version
+model User {
+  id        String   @id @default(uuid()) 
+  email     String   @unique
+ 
+  oauth    Boolean
+  consent  Boolean?
+  systemRole     String @default("user")
+  researchNotes Json?
+  sessions UserSession[]
+  interactions UserInteraction[]
+  enrollments      Enrollment[]
+  password  String?  
+  name    String   
+}
+
+model UserSession {
+  id        String   @id @default(uuid()) 
+  userId    String
+  sessionStartTime DateTime @default(now())
+  sessionEndTime   DateTime?
+  user      User     @relation(fields: [userId], references: [id])
+  interactions    UserInteraction[]
+  researchNotesForSession Json?
+}
+
+model Session {
+  id        String   @id
+  sid       String   @unique
+  data      String
+  expiresAt   DateTime
+}
+
+model UserInteraction {
+  id               String   @id @default(uuid()) 
+  userId           String
+  sessionId       String
+  timestamp        DateTime        @default(now())
+  actionName        String         @default("")
+  actions  Json[]
+  user             User     @relation(fields: [userId], references: [id])
+  session          UserSession  @relation(fields: [sessionId], references: [id])
+}
+
+model Class {
+  id             String          @id @default(uuid()) 
+  classMetadata  Json
+  createdDate    DateTime        @default(now())
+  materials      ClassMaterial[]
+  professorId      String
+  enrollments      Enrollment[]
+  pendingEnrollments PendingEnrollment[]    
+}
+
+model Enrollment {
+  classId   String
+  userId    String
+  role      String
+
+  class     Class   @relation(fields: [classId], references: [id])
+  user      User    @relation(fields: [userId], references: [id])
+
+  @@id([classId, userId])
+}
+
+// Status is the status of the pending enrollment, "not enrolled", "enrolled"
+model PendingEnrollment {
+  id        String   @id @default(uuid()) 
+  classId   String
+  userEmail    String
+  role      String
+  status   String
+  class     Class   @relation(fields: [classId], references: [id])
+}
+
+// Status is the status of the material, ie. "waiting", "processing", "processed"
+model ClassMaterial {
+  id              String       @id @default(uuid()) 
+  classId         String
+  materialType    String
+  materialMetadata Json
+  materialContent String
+  status          String
+  uploadedDate    DateTime     @default(now())
+  availableDate   DateTime     @default("1970-01-01T00:00:00.000Z") // default to Unix epoch (0)
+  class           Class        @relation(fields: [classId], references: [id])
+  documents       Document[]
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  fileName     String
+  fileUrl      String
+  chunks       Json?
+
+  uploadedDate DateTime @default(now())
+  classMaterialId String?
+
+  classMaterial ClassMaterial? @relation(fields: [classMaterialId], references: [id])
+}
+
