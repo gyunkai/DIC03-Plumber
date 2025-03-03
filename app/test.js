@@ -48,7 +48,7 @@ function testCreateUser() {
                         data: {
                             name: "Test User",
                             email: "test@example.com",
-                            password: "hashedpassword123",
+                            password: "hashedpassword345",
                             oauth: false,
                             id: "2",
                         },
