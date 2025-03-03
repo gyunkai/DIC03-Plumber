@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
     try {
         // Get PDF files list from S3
         const files = await listPdfFiles();
-
+        console.log(files);
         // If no files found, use static list as fallback
         const pdfList = files.length > 0 ? files : pdfFiles;
 

@@ -1,4 +1,5 @@
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Create S3 client with fixed IAM credentials
 const s3Client = new S3Client({
@@ -34,6 +35,25 @@ export async function getPdfFromS3(key: string): Promise<Buffer> {
         return Buffer.concat(chunks);
     } catch (error) {
         console.error("Error getting PDF from S3:", error);
+        throw error;
+    }
+}
+
+// Generate a pre-signed URL for direct S3 access
+export async function getPresignedUrl(key: string): Promise<string> {
+    const command = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+    });
+
+    try {
+        // Generate pre-signed URL that expires in 1 hour
+        const signedUrl = await getSignedUrl(s3Client, command, {
+            expiresIn: 3600
+        });
+        return signedUrl;
+    } catch (error) {
+        console.error("Error generating pre-signed URL:", error);
         throw error;
     }
 }

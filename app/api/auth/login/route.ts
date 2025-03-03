@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getAwsCredentials, updateAwsCredentials } from "@/app/utils/aws-credentials";
 
-// Check if email is an admin email
-function isAdminEmail(email: string): boolean {
-    // Define admin email rules based on your requirements
-    // For example, all emails ending with @admin.example.com are admins
-    return email.endsWith("@admin.example.com") ||
-        email.includes("admin") ||
-        email === "admin@example.com";
-}
+import prisma from "@/app/lib/prisma";
+import bcrypt from "bcryptjs";
 
 export async function POST(request: NextRequest) {
     try {
@@ -23,37 +16,54 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // There should be real user validation logic here
-        // For demonstration, we only check email format
+        // Find user in database by email
+        const user = await prisma.user.findUnique({
+            where: { email }
+        });
 
-        // Check if user is an admin
-        const isAdmin = isAdminEmail(email);
-
-        // If admin, get and update AWS credentials
-        let awsCredentials = null;
-        if (isAdmin) {
-            awsCredentials = await getAwsCredentials();
-            if (awsCredentials) {
-                await updateAwsCredentials(awsCredentials);
-            }
+        // If user not found or password doesn't match, return error
+        if (!user || !user.password) {
+            return NextResponse.json(
+                { error: "Invalid email or password" },
+                { status: 401 }
+            );
         }
 
-        // Set session cookie
-        const cookieStore = cookies();
-        cookieStore.set("session", isAdmin ? "admin-session-token" : "user-session-token", {
+        // Verify password using bcrypt
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+            return NextResponse.json(
+                { error: "Invalid email or password" },
+                { status: 401 }
+            );
+        }
+
+        // Set session cookie with user information
+        const response = NextResponse.json({
+            success: true,
+            message: "Login successful",
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            }
+        });
+
+        // Set the cookie on the response
+        response.cookies.set({
+            name: "session",
+            value: JSON.stringify({
+                userId: user.id,
+                email: user.email,
+                name: user.name
+            }),
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             maxAge: 60 * 60 * 24, // 1 day
             path: "/",
         });
 
-        return NextResponse.json({
-            success: true,
-            isAdmin,
-            message: `Login successful${isAdmin ? " (Admin)" : ""}`,
-            // If admin, return credentials expiration time
-            ...(isAdmin && awsCredentials ? { credentialsExpiration: awsCredentials.expiration } : {})
-        });
+        return response;
     } catch (error) {
         console.error("Error during login:", error);
         return NextResponse.json(
