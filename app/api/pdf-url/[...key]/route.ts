@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPdfFromS3 } from "@/app/utils/s3";
+import { getPresignedUrl } from "@/app/utils/s3";
 
 interface Params {
     params: {
@@ -25,23 +25,20 @@ export async function GET(
             );
         }
 
-        console.log("Fetching PDF with key:", fullKey);
+        console.log("Generating presigned URL for PDF with key:", fullKey);
 
-        // Get PDF file directly from S3
-        const pdfBuffer = await getPdfFromS3(fullKey);
+        // Generate a pre-signed URL for the PDF
+        const presignedUrl = await getPresignedUrl(fullKey);
 
-        // Return PDF file with appropriate headers
-        return new NextResponse(pdfBuffer, {
-            headers: {
-                "Content-Type": "application/pdf",
-                "Content-Disposition": `inline; filename="${fullKey.split('/').pop()}"`,
-                "Content-Length": pdfBuffer.length.toString(),
-            },
+        // Return the pre-signed URL
+        return NextResponse.json({
+            success: true,
+            url: presignedUrl
         });
     } catch (error) {
-        console.error("Error fetching PDF:", error);
+        console.error("Error generating presigned URL:", error);
         return NextResponse.json(
-            { error: "Failed to fetch PDF" },
+            { error: "Failed to generate presigned URL" },
             { status: 500 }
         );
     }

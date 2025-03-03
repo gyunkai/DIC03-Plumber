@@ -1,9 +1,16 @@
 "use client";
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface ClassInfo {
   title: string;
   code: string;
+}
+
+interface UserInfo {
+  id: string;
+  name: string;
+  email: string;
 }
 
 const classes: ClassInfo[] = [
@@ -134,13 +141,58 @@ const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
 };
 
 const ProfilePage: React.FC = () => {
+  const router = useRouter();
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch user information from session when component mounts
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const response = await fetch('/api/user/profile');
+        if (!response.ok) {
+          // If not authenticated, redirect to login page
+          router.push('/login');
+          return;
+        }
+
+        const data = await response.json();
+        setUser(data.user);
+      } catch (error) {
+        console.error('Error fetching user info:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserInfo();
+  }, [router]);
+
+  // Handle Get Started button click
+  const handleGetStarted = (classInfo: ClassInfo) => {
+    // Navigate to chat page with class info as query parameters
+    router.push(`/chat?class=${encodeURIComponent(classInfo.title)}&code=${encodeURIComponent(classInfo.code)}`);
+  };
+
+  if (loading) {
+    return (
+      <div style={containerStyle}>
+        <div style={innerContainerStyle}>
+          <div className="flex justify-center items-center h-screen">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={containerStyle}>
       <div style={innerContainerStyle}>
         <header style={headerStyle}>
           <div style={userInfoStyle}>
             <div style={profileStyle} />
-            <div style={usernameStyle}>User Name</div>
+            <div style={usernameStyle}>{user?.name || 'User'}</div>
           </div>
           <h2 style={titleStyle}>Your Classes</h2>
         </header>
@@ -156,7 +208,13 @@ const ProfilePage: React.FC = () => {
                 <h1 style={cardTitleStyle}>{cls.title}</h1>
                 <p style={cardCodeStyle}>{cls.code}</p>
               </div>
-              <div style={buttonStyle}>Get Started</div>
+              <div
+                style={buttonStyle}
+                onClick={() => handleGetStarted(cls)}
+                className="hover:bg-gray-700"
+              >
+                Get Started
+              </div>
             </div>
           ))}
         </div>

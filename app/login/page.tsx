@@ -1,17 +1,59 @@
 "use client";
 import { useRouter } from "next/navigation";
-import React from "react";
+import React, { useState, useEffect } from "react";
 
 const Login = () => {
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+
+  // Check for success message from registration
+  useEffect(() => {
+    // Get success message from URL if it exists
+    const urlParams = new URLSearchParams(window.location.search);
+    const message = urlParams.get("message");
+    if (message) {
+      setSuccessMessage(message);
+    }
+  }, []);
 
   const handleSignUp = () => {
     router.push("/signup");
   };
 
-  const handleLogIn = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleLogIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    router.push("/profile");
+    setError("");
+    setLoading(true);
+
+    try {
+      // Call login API
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      // If login successful, redirect to profile page
+      if (data.success) {
+        router.push("/profile");
+      }
+    } catch (err: any) {
+      setError(err.message || "An error occurred during login");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -22,6 +64,21 @@ const Login = () => {
         </div>
         <h2 className="text-3xl font-bold text-center text-gray-800 mb-2">Welcome Back</h2>
         <p className="text-center text-gray-600 mb-6">Log in to access your account</p>
+
+        {/* Success message from registration */}
+        {successMessage && (
+          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
+            {successMessage}
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleLogIn} className="space-y-6">
           <div>
             <label htmlFor="email" className="block text-gray-700 font-medium mb-1">
@@ -31,6 +88,8 @@ const Login = () => {
               type="email"
               id="email"
               required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
               placeholder="you@example.com"
             />
@@ -43,6 +102,8 @@ const Login = () => {
               type="password"
               id="password"
               required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
               placeholder="********"
             />
@@ -66,9 +127,10 @@ const Login = () => {
           </div>
           <button
             type="submit"
-            className="w-full py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors"
+            disabled={loading}
+            className="w-full py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
         <div className="mt-6 text-center">

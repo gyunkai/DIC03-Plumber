@@ -10,6 +10,9 @@ const Signup = () => {
     password: "",
     confirmPassword: "",
   });
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -17,9 +20,13 @@ const Signup = () => {
 
   const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
+    // Check if passwords match
     if (formData.password !== formData.confirmPassword) {
-      alert("Password and Confirm Password do not match");
+      setError("Password and Confirm Password do not match");
+      setLoading(false);
       return;
     }
 
@@ -34,15 +41,24 @@ const Signup = () => {
         }),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        router.push("/profile");
+        // Show success message
+        setSuccess(true);
+
+        // Redirect to login page after 2 seconds with success message
+        setTimeout(() => {
+          router.push(`/login?message=${encodeURIComponent(data.message || "Registration successful. Please login.")}`);
+        }, 2000);
       } else {
-        const errorData = await res.json();
-        alert(errorData.error || "Signup failed");
+        setError(data.error || "Signup failed");
       }
     } catch (error) {
       console.error("Signup error:", error);
-      alert("An error occurred during signup");
+      setError("An error occurred during signup");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -58,6 +74,21 @@ const Signup = () => {
         <p className="text-center text-gray-600 mb-6">
           Join us and enjoy your personal tutor experience.
         </p>
+
+        {/* Success message */}
+        {success && (
+          <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
+            Registration successful! Redirecting to login page...
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSignup} className="space-y-6">
           <div>
             <label htmlFor="name" className="block text-gray-700 font-medium mb-1">
@@ -72,6 +103,7 @@ const Signup = () => {
               required
               placeholder="Your full name"
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+              disabled={loading || success}
             />
           </div>
           <div>
@@ -87,6 +119,7 @@ const Signup = () => {
               required
               placeholder="you@example.com"
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+              disabled={loading || success}
             />
           </div>
           <div>
@@ -102,6 +135,7 @@ const Signup = () => {
               required
               placeholder="********"
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+              disabled={loading || success}
             />
           </div>
           <div>
@@ -117,13 +151,15 @@ const Signup = () => {
               required
               placeholder="********"
               className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+              disabled={loading || success}
             />
           </div>
           <button
             type="submit"
-            className="w-full py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors"
+            className="w-full py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
+            disabled={loading || success}
           >
-            Sign Up
+            {loading ? "Signing Up..." : "Sign Up"}
           </button>
         </form>
       </div>

@@ -1,11 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL2")
-
+  extensions = [pgvector(map: "vector")]
 }
 
 // oauthId refers to userId in the old version
@@ -22,6 +23,7 @@ model User {
   enrollments      Enrollment[]
   password  String?  
   name    String   
+  chatMessages ChatMessage[]
 }
 
 model UserSession {
@@ -32,6 +34,7 @@ model UserSession {
   user      User     @relation(fields: [userId], references: [id])
   interactions    UserInteraction[]
   researchNotesForSession Json?
+  chatMessages ChatMessage[]
 }
 
 model Session {
@@ -50,6 +53,28 @@ model UserInteraction {
   actions  Json[]
   user             User     @relation(fields: [userId], references: [id])
   session          UserSession  @relation(fields: [sessionId], references: [id])
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid())
+  content     String
+  sender      String
+  timestamp   DateTime @default(now())
+  userId      String
+  sessionId   String?
+  pdfKey      String?
+  
+  user        User     @relation(fields: [userId], references: [id])
+  session     UserSession? @relation(fields: [sessionId], references: [id])
+  embedding   ChatEmbedding?
+}
+
+model ChatEmbedding {
+  id          String   @id @default(uuid())
+  messageId   String   @unique
+  embedding   Unsupported("vector(1536)")
+  
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
 model Class {
