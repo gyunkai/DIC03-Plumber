@@ -26,8 +26,7 @@ export const POST = async (req: NextRequest) => {
         name,
         email,
         password: hashedPassword,
-        oauth: false,
-        id: "5f5b0b7d-6b4b-4b7b-8b3b-3b7b0b5b0b7b",
+        oauth: true, //test
       },
     });
 
