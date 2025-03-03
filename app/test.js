@@ -46,7 +46,7 @@ function testCreateUser() {
                     _a.trys.push([0, 2, 3, 5]);
                     return [4 /*yield*/, prisma_1.default.user.create({
                         data: {
-                            name: "Test User",
+                            name: "Test",
                             email: "test@example.com",
                             password: "hashedpassword789",
                             oauth: false,
