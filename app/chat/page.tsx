@@ -8,7 +8,7 @@ type Messages = {
   sender: "user" | "bot";
 };
 
-export default function ChatPage() {
+export default function chat() {
   const [messages, setMessages] = useState<Messages[]>([]);
   const [input, setInput] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
