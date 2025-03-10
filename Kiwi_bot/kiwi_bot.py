@@ -60,7 +60,7 @@ def main():
             break
         # Use the new .invoke() method instead of __call__
         response = chain.invoke(input=query)
-        print("Bot:", response["answer"], "\n", flush=True)
+        print("Bot:", response, "\n", flush=True)
 
 if __name__ == "__main__":
     main()
