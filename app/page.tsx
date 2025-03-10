@@ -14,7 +14,7 @@ export default function LandingPage() {
             {/* Navbar */}
             <div className="w-full flex items-center justify-between px-8 md:px-16 py-6">
                 <div className="flex items-center space-x-4">
-                    <img className="w-24 md:w-36" src="/image/nyu-logo.png" alt="Logo"/>
+                    <img className="w-24 md:w-36" src="/image/nyu-logo.png" alt="Logo" />
                     <div className="text-white text-2xl md:text-3xl font-black font-['Poppins']">Project Kiwi</div>
                 </div>
             </div>
@@ -31,7 +31,7 @@ export default function LandingPage() {
                     Your AI-Powered Personal Tutor for Computer Science & Data Science
                 </p>
 
-                <button 
+                <button
                     onClick={handleStartChatting}
                     className="mt-6 px-6 py-3 md:px-10 md:py-4 bg-white text-black text-lg md:text-2xl rounded-full shadow-md transition hover:bg-gray-200">
                     Start Chatting
