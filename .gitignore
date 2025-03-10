@@ -17,7 +17,8 @@ yarn-debug.log*
 yarn-error.log*
 
 ### 🔹 Build & Output Files ###
-/.next/          # Next.js build output
+/.next/          
+# Next.js build output
 /out/            # Static export output
 /build/          # Production build
 
@@ -49,3 +50,5 @@ Thumbs.db        # Windows system file
 ### 🔹 TypeScript ###
 *.tsbuildinfo    # TypeScript build info files
 next-env.d.ts    # Auto-generated Next.js TypeScript file
+ # This forces a refresh
+
