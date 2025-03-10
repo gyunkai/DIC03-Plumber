@@ -1,50 +1,66 @@
 import os
-from langchain_unstructured import UnstructuredLoader
-from langchain_community.embeddings import OpenAIEmbeddings
+# Updated import for PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
+# Updated import for OpenAIEmbeddings
+from langchain.chains import (
+    create_history_aware_retriever,
+    create_retrieval_chain,
+)
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings  
 from langchain_community.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
-from langchain_community.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
-
-print(os.environ.get("OPENAI_API_KEY"))
 
 def main():
     # Retrieve API key from environment variable
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY environment variable is not set.")
+    
+    # --- Document Ingestion ---
+    print("Loading document...", flush=True)
+    doc_path = r"D:\NYUSH Spring 2025\Plumber-git\Proposals\main.pdf"
+    if not os.path.exists(doc_path):
+        print("File does not exist!")
+    else:
+        print("File exists, proceeding...")
 
-    # --- Document Ingestion and Vector Store Creation ---
-    # Replace the file path below with your actual document path.
-    doc_path = r"D:\NYUSH Spring 2025\Plumber-git\public\pdf\Lecture1.pdf"
-    loader = UnstructuredLoader(doc_path)
+    loader = PyPDFLoader(doc_path)
     documents = loader.load()
-
-    # Generate embeddings for the document using OpenAI's embeddings API
+    print(f"Loaded {len(documents)} document(s).", flush=True)
+    
+    # --- Create Embeddings & Vector Store ---
+    print("Creating embeddings and vector store...", flush=True)
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
     vector_store = FAISS.from_documents(documents, embeddings)
-
-    # --- Set Up Conversation Memory ---
+    print("Vector store created.", flush=True)
+    
+    # --- Setup Conversation Memory ---
+    print("Setting up conversation memory...", flush=True)
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
-    # --- Initialize ChatGPT Model ---
+    
+    # --- Initialize Chat Model ---
+    print("Initializing Chat Model...", flush=True)
     llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4o")
-
-    # --- Build the Conversational Retrieval Chain ---
-    qa_chain = ConversationalRetrievalChain.from_llm(
+    
+    # --- Build the Conversational Retrieval Chain (RAG) ---
+    print("Building Conversational Retrieval Chain...", flush=True)
+    chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vector_store.as_retriever(),
         memory=memory
     )
-
+    print("Setup complete.\n", flush=True)
+    
     # --- Chat Loop ---
-    print("Type your questions below. Type 'exit' or 'quit' to end the session.\n")
+    print("Type your questions below. Type 'exit' or 'quit' to end the session.\n", flush=True)
     while True:
         query = input("User: ")
         if query.lower() in ["exit", "quit"]:
             break
-        response = qa_chain({"question": query})
-        print("Bot:", response["answer"], "\n")
+        # Use the new .invoke() method instead of __call__
+        response = chain.invoke(input=query)
+        print("Bot:", response["answer"], "\n", flush=True)
 
 if __name__ == "__main__":
     main()
