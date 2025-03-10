@@ -97,7 +97,7 @@ export default function chat() {
           <div className="flex-1">
             {loading ? (
               <div className="flex-1 flex items-center justify-center">
-                <p>加载PDF文件中...</p>
+                <p>loading the pdf file...</p>
               </div>
             ) : (
               <iframe
