@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Send, ChevronLeft, ChevronRight } from "lucide-react";
+import { pdfFiles } from "../utils/s3";
 
 type Messages = {
   text: string;
@@ -12,14 +13,35 @@ export default function chat() {
   const [messages, setMessages] = useState<Messages[]>([]);
   const [input, setInput] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [pdfUrls, setPdfUrls] = useState<{ [key: string]: string }>({});
+  const [selectedPdf, setSelectedPdf] = useState(pdfFiles[0].key);
+  const [loading, setLoading] = useState(true);
 
-  // List of PDF files stored in the public folder
-  const pdfFiles = [
-    { name: "Lecture 1", file: "/pdf/Lecture1.pdf" },
-    { name: "Lecture 2", file: "/pdf/Lecture2.pdf" },
-  ];
 
-  const [selectedPdf, setSelectedPdf] = useState(pdfFiles[0].file);
+  useEffect(() => {
+    async function fetchPdfUrls() {
+      setLoading(true);
+      try {
+        const urls: { [key: string]: string } = {};
+
+
+        for (const pdf of pdfFiles) {
+          const response = await fetch(`/api/get-pdf-url?key=${pdf.key}`);
+          if (!response.ok) throw new Error('Failed to fetch PDF URL');
+          const data = await response.json();
+          urls[pdf.key] = data.url;
+        }
+
+        setPdfUrls(urls);
+      } catch (error) {
+        console.error("Error fetching PDF URLs:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchPdfUrls();
+  }, []);
 
   const handleSendMessage = () => {
     if (input.trim() === "") return;
@@ -38,9 +60,8 @@ export default function chat() {
       <div className="flex flex-1 flex-col md:flex-row">
         {/* Left Sidebar: Collapsible PDF File Selector */}
         <div
-          className={`border-r border-gray-200 p-4 transition-all duration-300 ${
-            isSidebarOpen ? "w-full md:w-[200px]" : "w-0 md:w-[50px]"
-          } overflow-hidden`}
+          className={`border-r border-gray-200 p-4 transition-all duration-300 ${isSidebarOpen ? "w-full md:w-[200px]" : "w-0 md:w-[50px]"
+            } overflow-hidden`}
         >
           <div className="flex justify-end mb-4">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
@@ -58,10 +79,9 @@ export default function chat() {
                 {pdfFiles.map((pdf, index) => (
                   <li
                     key={index}
-                    onClick={() => setSelectedPdf(pdf.file)}
-                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                      selectedPdf === pdf.file ? "bg-blue-100" : ""
-                    }`}
+                    onClick={() => setSelectedPdf(pdf.key)}
+                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedPdf === pdf.key ? "bg-blue-100" : ""
+                      }`}
                   >
                     {pdf.name}
                   </li>
@@ -75,11 +95,17 @@ export default function chat() {
         <div className="flex-1 h-full bg-white flex flex-col p-4">
           <h2 className="text-lg font-bold mb-2">PDF Viewer</h2>
           <div className="flex-1">
-            <iframe
-              src={selectedPdf}
-              className="w-full h-full"
-              title="PDF Viewer"
-            />
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <p>加载PDF文件中...</p>
+              </div>
+            ) : (
+              <iframe
+                src={pdfUrls[selectedPdf] || ""}
+                className="w-full h-full"
+                title="PDF Viewer"
+              />
+            )}
           </div>
         </div>
 
@@ -99,11 +125,10 @@ export default function chat() {
             {messages.map((msg, index) => (
               <div
                 key={index}
-                className={`mb-2 p-3 rounded-lg ${
-                  msg.sender === "user"
-                    ? "bg-blue-100 self-end"
-                    : "bg-gray-100 self-start"
-                }`}
+                className={`mb-2 p-3 rounded-lg ${msg.sender === "user"
+                  ? "bg-blue-100 self-end"
+                  : "bg-gray-100 self-start"
+                  }`}
               >
                 {msg.text}
               </div>
