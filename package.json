@@ -1,41 +1,28 @@
 {
-  "name": "my-static-site",
+  "name": "kiwi",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
+    "@tailwindcss/postcss": "^4.0.12",
     "bcryptjs": "^3.0.2",
     "lucide-react": "^0.475.0",
     "next": "^15.1.7",
+    "postcss": "^8.5.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.12"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "15.1.7",
-    "postcss": "^8",
     "prisma": "^6.4.1",
-    "tailwindcss": "^3.4.1",
     "typescript": "^5"
-  },
-  "optionalDependencies": {
-    "@next/swc-darwin-arm64": "^15.2.0",
-    "@next/swc-darwin-x64": "^15.2.0",
-    "@next/swc-linux-x64-gnu": "^15.2.0",
-    "@next/swc-linux-x64-musl": "^15.2.0",
-    "@next/swc-win32-x64-msvc": "^15.2.0",
-    "@next/swc-win32-ia32-msvc": "^15.2.0",
-    "@next/swc-linux-arm64-gnu": "^15.2.0",
-    "@next/swc-linux-arm64-musl": "^15.2.0"
   }
 }
