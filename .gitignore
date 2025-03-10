@@ -1,0 +1,51 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+### 🔹 Node.js Dependencies ###
+/node_modules
+/.pnp
+.pnp.*
+
+### 🔹 Package Managers (yarn, npm, pnpm) ###
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+### 🔹 Build & Output Files ###
+/.next/          # Next.js build output
+/out/            # Static export output
+/build/          # Production build
+
+### 🔹 Prisma (Database Migrations & Schema) ###
+/prisma/migrations/  # Prisma migrations (optional, keep if needed)
+
+### 🔹 Environment Variables & Secrets ###
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem            # Private key files (security risk)
+
+### 🔹 Testing & Coverage ###
+/coverage
+
+### 🔹 Miscellaneous ###
+.DS_Store        # macOS system file
+Thumbs.db        # Windows system file
+*.log            # Log files
+.vscode/         # VS Code settings (optional)
+.idea/           # JetBrains IDE settings (optional)
+*.swp            # Vim swap files
+
+### 🔹 Next.js Specific ###
+.vercel         # Vercel deployment settings
+
+### 🔹 TypeScript ###
+*.tsbuildinfo    # TypeScript build info files
+next-env.d.ts    # Auto-generated Next.js TypeScript file
