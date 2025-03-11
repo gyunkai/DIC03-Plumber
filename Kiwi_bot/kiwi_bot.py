@@ -30,12 +30,14 @@ def main():
     
     print("Creating embeddings and vector store...", flush=True)
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+
     vector_store = FAISS.from_documents(documents, embeddings)
     retriever = vector_store.as_retriever()
     print("Vector store created.", flush=True)
     
     print("Setting up conversation memory...", flush=True)
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    
     
     system_prompt = (
         "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
@@ -94,6 +96,7 @@ def main():
         answer_text = response.get("content", "") if isinstance(response, dict) else response.content
         
         print("Bot:", answer_text, "\n", flush=True)
+        print(memory)
         
         memory.chat_memory.add_user_message(user_input)
         memory.chat_memory.add_ai_message(answer_text)
