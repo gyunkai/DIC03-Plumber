@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Send, ChevronLeft, ChevronRight } from "lucide-react";
 
 type Messages = {
@@ -8,18 +8,25 @@ type Messages = {
   sender: "user" | "bot";
 };
 
-export default function chat() {
+export default function Chat() {
   const [messages, setMessages] = useState<Messages[]>([]);
   const [input, setInput] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [pdfFiles, setPdfFiles] = useState<{ name: string; file: string }[]>([]);
+  const [selectedPdf, setSelectedPdf] = useState("");
 
-  // List of PDF files stored in the public folder
-  const pdfFiles = [
-    { name: "Lecture 1", file: "/pdf/Lecture1.pdf" },
-    { name: "Lecture 2", file: "/pdf/Lecture2.pdf" },
-  ];
-
-  const [selectedPdf, setSelectedPdf] = useState(pdfFiles[0].file);
+  // Fetch PDF files from the API on mount
+  useEffect(() => {
+    fetch('/api/pdfFiles')
+      .then((res) => res.json())
+      .then((data) => {
+        setPdfFiles(data);
+        if (data.length > 0) {
+          setSelectedPdf(data[0].file);
+        }
+      })
+      .catch((err) => console.error("Error fetching PDF files:", err));
+  }, []);
 
   const handleSendMessage = () => {
     if (input.trim() === "") return;
@@ -75,11 +82,15 @@ export default function chat() {
         <div className="flex-1 h-full bg-white flex flex-col p-4">
           <h2 className="text-lg font-bold mb-2">PDF Viewer</h2>
           <div className="flex-1">
-            <iframe
+            {selectedPdf ? (
+              <iframe
               src={selectedPdf}
               className="w-full h-full"
               title="PDF Viewer"
             />
+            ) : (
+              <p>No PDF selected</p>
+            )}
           </div>
         </div>
 
