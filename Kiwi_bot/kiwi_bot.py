@@ -1,4 +1,5 @@
 import os
+import glob
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -17,21 +18,47 @@ def main():
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY environment variable is not set.")
     
-    print("Loading document...", flush=True)
-    doc_path = r"D:\NYUSH Spring 2025\Plumber-git\Proposals\main.pdf"
-    if not os.path.exists(doc_path):
+    
+    folder_path = r"D:\NYUSH Spring 2025\Plumber-git\public\pdf"
+    
+
+    if not os.path.exists(folder_path):
         print("File does not exist!")
         return
     print("File exists, proceeding...")
 
-    loader = PyPDFLoader(doc_path)
-    documents = loader.load()
-    print(f"Loaded {len(documents)} document(s).", flush=True)
+    # Get a list of all PDF files in the folder
+    pdf_files = glob.glob(os.path.join(folder_path, "*.pdf"))
+
+    # List to hold all loaded documents
+    all_documents = []
+
+
+    print("Starting to load documents...", flush=True)
+
+    for doc_path in pdf_files:
+        print(f"Loading document: {doc_path}", flush=True)
+        
+        if not os.path.exists(doc_path):
+            print(f"File does not exist: {doc_path}")
+            continue
+
+        # Create the loader for the current file
+        loader = PyPDFLoader(doc_path)
+        
+        # Load the document (or documents, if split by pages/sections)
+        documents = loader.load()
+        print(f"Loaded {len(documents)} document(s) from {doc_path}.", flush=True)
+        
+        # Append the loaded documents to the list
+        all_documents.extend(documents)
+
+    print(f"Total loaded documents: {len(all_documents)}", flush=True)
     
     print("Creating embeddings and vector store...", flush=True)
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-    vector_store = FAISS.from_documents(documents, embeddings)
+    vector_store = FAISS.from_documents(all_documents, embeddings)
     retriever = vector_store.as_retriever()
     print("Vector store created.", flush=True)
     
@@ -43,6 +70,7 @@ def main():
         "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
         "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided."
         "Here you are tasked with answering question based on the document provided which is for Introduction to Programming."
+        "Please prioritize answering questions based on the document."
     )
     memory.chat_memory.messages.append(SystemMessage(content=system_prompt))
     
@@ -96,7 +124,7 @@ def main():
         answer_text = response.get("content", "") if isinstance(response, dict) else response.content
         
         print("Bot:", answer_text, "\n", flush=True)
-        print(memory)
+        # print(memory)
         
         memory.chat_memory.add_user_message(user_input)
         memory.chat_memory.add_ai_message(answer_text)
