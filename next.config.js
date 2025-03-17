@@ -16,17 +16,6 @@ const nextConfig = {
         domains: ['plumbers3.s3.eu-north-1.amazonaws.com'],
     },
 
-    // Configure redirects with higher priority
-    async redirects() {
-        return [
-            {
-                source: '/',
-                destination: '/begin',
-                permanent: false,
-            },
-        ];
-    },
-
     // Configure headers if needed
     async headers() {
         return [
@@ -59,4 +48,4 @@ const nextConfig = {
     },
 };
 
-module.exports = nextConfig; 
+module.exports = nextConfig;

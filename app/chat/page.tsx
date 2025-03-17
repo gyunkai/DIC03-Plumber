@@ -24,7 +24,7 @@ interface UserInfo {
   email: string;
 }
 
-export default function chat() {
+export default function ChatPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
