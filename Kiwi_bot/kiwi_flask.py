@@ -76,6 +76,39 @@ prompt_template = PromptTemplate(
     )
 )
 
+def safety_check(answer):
+    check_prompt = (
+        "You are a safety evaluator. Review the following answer and determine if it reveals "
+        "too much sensitive or internal information. Reply with 'SAFE' if it is acceptable or 'BLOCK' "
+        "if it discloses too much. Answer only with one word: either 'SAFE' or 'BLOCK'.\n\n"
+        f"Answer: {answer}"
+    )
+    safety_response = llm.invoke(check_prompt)
+    verdict = safety_response.get("content", "").strip() if isinstance(safety_response, dict) else safety_response.content.strip()
+    return verdict.upper()
+
+def get_safe_answer(initial_answer, max_attempts=3):
+    attempt = 0
+    answer_text = initial_answer
+
+    while attempt < max_attempts:
+        verdict = safety_check(answer_text)
+        if verdict == "SAFE":
+            break
+        else:
+            # Create a prompt instructing the model to produce a revised safe answer
+            revision_prompt = (
+                "Your previous answer revealed too much sensitive or detailed information. "
+                "Please provide a revised answer that conveys the necessary information safely without revealing "
+                "any sensitive or internal details."
+            )
+            # Optionally, you could include context from the original query if needed
+            revised_response = llm.invoke(revision_prompt)
+            answer_text = revised_response.get("content", "") if isinstance(revised_response, dict) else revised_response.content
+            attempt += 1
+
+    return answer_text
+
 def get_document_context(query, retriever):
     docs = retriever.invoke(query)
     return "\n---\n".join([doc.page_content for doc in docs])
@@ -108,13 +141,18 @@ def query():
 
     # Get the response from the language model
     response = llm.invoke(full_prompt)
-    answer_text = response.get("content", "") if isinstance(response, dict) else response.content
+    initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
+
+    # Run the safety check loop to potentially reprompt for a safer answer
+    safe_answer = get_safe_answer(initial_answer)
+
+    
 
     # Update conversation memory
     memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(answer_text)
-    print("Bot:", answer_text, flush=True)
-    return jsonify({"answer": answer_text})
+    memory.chat_memory.add_ai_message(safe_answer)
+    print("Bot:", safe_answer, flush=True)
+    return jsonify({"answer": safe_answer})
 
 if __name__ == "__main__":
     app.run(debug=True)
