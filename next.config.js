@@ -16,13 +16,13 @@ const nextConfig = {
         domains: ['plumbers3.s3.eu-north-1.amazonaws.com'],
     },
 
-    // Configure redirects if needed
+    // Configure redirects with higher priority
     async redirects() {
         return [
             {
                 source: '/',
-                destination: '/login',
-                permanent: true,
+                destination: '/begin',
+                permanent: false,
             },
         ];
     },

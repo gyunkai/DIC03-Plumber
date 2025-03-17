@@ -72,7 +72,7 @@ model ChatMessage {
 model ChatEmbedding {
   id          String   @id @default(uuid())
   messageId   String   @unique
-  embedding   Unsupported("vector(1536)")
+  embedding   Float[]
   
   message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
