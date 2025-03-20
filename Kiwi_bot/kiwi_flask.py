@@ -10,6 +10,25 @@ import json
 from typing import List, Dict
 import psycopg2
 from psycopg2.extras import Json
+from urllib.parse import urlparse
+from dotenv import load_dotenv, find_dotenv
+from pathlib import Path
+
+# Find and load .env file
+env_path = find_dotenv()
+print("Found .env file at:", env_path)
+
+# Force reload environment variables
+load_dotenv(env_path, override=True)
+
+# Print environment variables for debugging
+print("Environment variables after loading:")
+print("OPENAI_API_KEY:", os.getenv("OPENAI_API_KEY"))
+print("DATABASE_URL3:", os.getenv("DATABASE_URL3"))
+
+# Force set environment variables
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+os.environ["DATABASE_URL3"] = os.getenv("DATABASE_URL3")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -30,12 +49,19 @@ def get_db_connection():
     Returns:
         psycopg2.connection: Database connection
     """
+    # Parse database URL
+    db_url = os.getenv("DATABASE_URL3")
+    if not db_url:
+        raise ValueError("DATABASE_URL3 environment variable is not set")
+    
+    parsed = urlparse(db_url)
     return psycopg2.connect(
-        dbname=os.getenv("DATABASE_NAME"),
-        user=os.getenv("DATABASE_USER"),
-        password=os.getenv("DATABASE_PASSWORD"),
-        host=os.getenv("DATABASE_HOST", "localhost"),
-        port=os.getenv("DATABASE_PORT", "5432")
+        dbname=parsed.path[1:],  # Remove leading slash
+        user=parsed.username,
+        password=parsed.password,
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        sslmode='require'  # Enable SSL for RDS
     )
 
 # Load embeddings from database
@@ -55,7 +81,7 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
             cur.execute(
                 """
                 SELECT content, "pageNumber", embedding
-                FROM "PDFChunk"
+                FROM "PdfChunk"
                 WHERE "pdfName" = %s
                 """,
                 (pdf_name,)
@@ -64,7 +90,7 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
             cur.execute(
                 """
                 SELECT content, "pageNumber", embedding
-                FROM "PDFChunk"
+                FROM "PdfChunk"
                 """
             )
         
@@ -72,10 +98,15 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
         
         chunks = []
         for chunk in db_chunks:
+            # Convert embedding to numpy array if it's not already
+            embedding_data = chunk[2]
+            if not isinstance(embedding_data, np.ndarray):
+                embedding_data = np.array(embedding_data)
+                
             chunks.append({
                 "content": chunk[0],
                 "metadata": {"page": chunk[1]},
-                "embedding": np.array(chunk[2])
+                "embedding": embedding_data
             })
         
         return chunks
@@ -121,15 +152,21 @@ prompt_template = PromptTemplate(
     )
 )
 
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+def cosine_similarity(a, b) -> float:
     """
     Calculate cosine similarity between two vectors
     Args:
-        a (np.ndarray): First vector
-        b (np.ndarray): Second vector
+        a: First vector (list or numpy array)
+        b: Second vector (list or numpy array)
     Returns:
         float: Cosine similarity score
     """
+    # Convert to numpy arrays if they aren't already
+    if not isinstance(a, np.ndarray):
+        a = np.array(a)
+    if not isinstance(b, np.ndarray):
+        b = np.array(b)
+        
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def get_relevant_chunks(query: str, chunks: List[Dict], k: int = 3) -> List[Dict]:
@@ -145,9 +182,21 @@ def get_relevant_chunks(query: str, chunks: List[Dict], k: int = 3) -> List[Dict
     # Generate embedding for the query
     query_embedding = embeddings.embed_query(query)
     
+    print(f"Query embedding type: {type(query_embedding)}")
+    if chunks:
+        print(f"First chunk embedding type: {type(chunks[0]['embedding'])}")
+    
     # Calculate similarities and get top k chunks
-    similarities = [(chunk, cosine_similarity(query_embedding, chunk["embedding"])) 
-                   for chunk in chunks]
+    similarities = []
+    for chunk in chunks:
+        try:
+            similarity = cosine_similarity(query_embedding, chunk["embedding"])
+            similarities.append((chunk, similarity))
+        except Exception as e:
+            print(f"Error calculating similarity: {str(e)}")
+            print(f"Chunk embedding type: {type(chunk['embedding'])}")
+            print(f"Chunk embedding: {chunk['embedding'][:5]}..." if isinstance(chunk['embedding'], (list, np.ndarray)) else "Not list or array")
+    
     similarities.sort(key=lambda x: x[1], reverse=True)
     
     return [chunk for chunk, _ in similarities[:k]]
@@ -195,7 +244,7 @@ def safety_check(answer: str) -> str:
         f"Answer: {answer}"
     )
     safety_response = llm.invoke(check_prompt)
-    verdict = safety_response.get("content", "").strip() if isinstance(safety_response, dict) else safety_response.content.strip()
+    verdict = safety_response.get("content", "") if isinstance(safety_response, dict) else safety_response.content.strip()
     return verdict.upper()
 
 def get_safe_answer(initial_answer: str, max_attempts: int = 3) -> str:

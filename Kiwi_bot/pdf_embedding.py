@@ -7,6 +7,25 @@ from typing import List, Dict
 import json
 import psycopg2
 from psycopg2.extras import Json
+from urllib.parse import urlparse
+from dotenv import load_dotenv, find_dotenv
+from pathlib import Path
+
+# Find and load .env file
+env_path = find_dotenv()
+print("Found .env file at:", env_path)
+
+# Force reload environment variables
+load_dotenv(env_path, override=True)
+
+# Print environment variables for debugging
+print("Environment variables after loading:")
+print("OPENAI_API_KEY:", os.getenv("OPENAI_API_KEY"))
+print("DATABASE_URL3:", os.getenv("DATABASE_URL3"))
+
+# Force set environment variables
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+os.environ["DATABASE_URL3"] = os.getenv("DATABASE_URL3")
 
 class PDFEmbeddingProcessor:
     def __init__(self, openai_api_key: str):
@@ -21,12 +40,20 @@ class PDFEmbeddingProcessor:
             chunk_overlap=200,
             length_function=len
         )
+        
+        # Parse database URL
+        db_url = os.getenv("DATABASE_URL3")
+        if not db_url:
+            raise ValueError("DATABASE_URL3 environment variable is not set")
+        
+        parsed = urlparse(db_url)
         self.conn = psycopg2.connect(
-            dbname=os.getenv("DATABASE_NAME"),
-            user=os.getenv("DATABASE_USER"),
-            password=os.getenv("DATABASE_PASSWORD"),
-            host=os.getenv("DATABASE_HOST", "localhost"),
-            port=os.getenv("DATABASE_PORT", "5432")
+            dbname=parsed.path[1:],  # Remove leading slash
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            sslmode='require'  # Enable SSL for RDS
         )
         self.cur = self.conn.cursor()
 
@@ -69,6 +96,9 @@ class PDFEmbeddingProcessor:
         texts = [chunk["content"] for chunk in chunks]
         embeddings = self.embeddings.embed_documents(texts)
         
+        print(f"Generated {len(embeddings)} embeddings")
+        print(f"First embedding type: {type(embeddings[0])}")
+        
         for chunk, embedding in zip(chunks, embeddings):
             chunk["embedding"] = embedding
         
@@ -82,16 +112,24 @@ class PDFEmbeddingProcessor:
             pdf_name (str): Name of the PDF file
         """
         for chunk in chunks:
+            # Check if embedding is already a list or numpy array
+            embedding_value = chunk["embedding"]
+            if isinstance(embedding_value, np.ndarray):
+                embedding_list = embedding_value.tolist()
+            else:
+                # Already a list, no need to convert
+                embedding_list = embedding_value
+                
             self.cur.execute(
                 """
-                INSERT INTO "PDFChunk" ("pdfName", content, "pageNumber", embedding)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO "PdfChunk" (id, "pdfName", content, "pageNumber", embedding)
+                VALUES (gen_random_uuid(), %s, %s, %s, %s::vector)
                 """,
                 (
                     pdf_name,
                     chunk["content"],
                     chunk["metadata"].get("page", 0),
-                    Json(chunk["embedding"].tolist())
+                    embedding_list
                 )
             )
         self.conn.commit()
@@ -115,6 +153,7 @@ def main():
         raise ValueError("OPENAI_API_KEY environment variable is not set.")
 
     # Initialize processor
+    print(OPENAI_API_KEY)
     processor = PDFEmbeddingProcessor(OPENAI_API_KEY)
 
     # Process PDF file
