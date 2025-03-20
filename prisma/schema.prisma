@@ -134,3 +134,12 @@ model Document {
   classMaterial ClassMaterial? @relation(fields: [classMaterialId], references: [id])
 }
 
+model PdfChunk {
+  id          String   @id @default(uuid())
+  pdfName     String
+  content     String
+  pageNumber  Int
+  embedding   Unsupported("vector(1536)")
+  createdAt   DateTime @default(now())
+}
+
