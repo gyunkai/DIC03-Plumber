@@ -1,11 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL2")
-
+  url      = env("DATABASE_URL3")
+  extensions = [pgvector(map: "vector")]
 }
 
 // oauthId refers to userId in the old version
@@ -107,5 +108,14 @@ model Document {
   classMaterialId String?
 
   classMaterial ClassMaterial? @relation(fields: [classMaterialId], references: [id])
+}
+
+model PdfChunk {
+  id          String   @id @default(uuid())
+  pdfName     String
+  content     String
+  pageNumber  Int
+  embedding   Unsupported("vector(1536)")
+  createdAt   DateTime @default(now())
 }
 
