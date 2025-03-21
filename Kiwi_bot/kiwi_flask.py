@@ -280,41 +280,98 @@ def query():
     """
     Handle user queries and return responses
     """
-    data = request.get_json()
-    print("User:", data["query"], flush=True)
-    if not data or "query" not in data:
-        return jsonify({"error": "Missing 'query' in JSON payload."}), 400
+    print("Received request at /query endpoint")
+    try:
+        data = request.get_json()
+        print("Request data:", data)
+        
+        if not data:
+            print("Error: Empty request data")
+            return jsonify({"error": "Empty request data"}), 400
+            
+        if "query" not in data:
+            print("Error: Missing 'query' in request data")
+            return jsonify({"error": "Missing 'query' in JSON payload."}), 400
 
-    user_input = data["query"]
+        user_input = data["query"]
+        pdf_name = data.get("pdf_name")
+        use_all_chunks = data.get("use_all_chunks", False)
+        
+        print("User:", user_input, flush=True)
+        print("PDF name:", pdf_name, flush=True)
+        print("Use all chunks:", use_all_chunks, flush=True)
+        
+        # Reload chunks if needed
+        global document_chunks
+        if use_all_chunks or (pdf_name and not document_chunks):
+            try:
+                # If specific PDF is requested, load only that PDF's chunks
+                if pdf_name:
+                    print(f"Attempting to load chunks for PDF: {pdf_name}")
+                    document_chunks = load_embeddings_from_db(pdf_name)
+                    print(f"Loaded {len(document_chunks)} chunks for PDF: {pdf_name}")
+                # Otherwise load all chunks
+                else:
+                    print("Attempting to load all chunks")
+                    document_chunks = load_embeddings_from_db()
+                    print(f"Loaded all {len(document_chunks)} chunks from database")
+            except Exception as e:
+                print(f"Error loading chunks: {str(e)}")
+                # Continue with empty chunks if loading fails
+                document_chunks = []
+        
+        # Get document context using embeddings
+        try:
+            document_context = get_document_context(user_input)
+            print("Generated document context successfully")
+        except Exception as e:
+            print(f"Error generating document context: {str(e)}")
+            document_context = "Unable to retrieve document context."
+        
+        # Get conversation history (excluding the system message)
+        try:
+            chat_history = "\n".join(
+                [msg.content for msg in memory.chat_memory.messages if msg.__class__.__name__ != "SystemMessage"]
+            )
+            print("Retrieved chat history successfully")
+        except Exception as e:
+            print(f"Error retrieving chat history: {str(e)}")
+            chat_history = ""
 
-    # Get document context using embeddings
-    document_context = get_document_context(user_input)
+        # Format the prompt for the LLM
+        full_prompt = prompt_template.format(
+            system_prompt=system_prompt,
+            document_context=document_context,
+            chat_history=chat_history,
+            user_input=user_input
+        )
+        print("Created full prompt successfully")
 
-    # Get conversation history (excluding the system message)
-    chat_history = "\n".join(
-        [msg.content for msg in memory.chat_memory.messages if msg.__class__.__name__ != "SystemMessage"]
-    )
+        # Get the response from the language model
+        try:
+            response = llm.invoke(full_prompt)
+            initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
+            print("Generated initial answer successfully")
+        except Exception as e:
+            print(f"Error generating answer from LLM: {str(e)}")
+            return jsonify({"error": f"Failed to generate response: {str(e)}"}), 500
 
-    # Format the prompt for the LLM
-    full_prompt = prompt_template.format(
-        system_prompt=system_prompt,
-        document_context=document_context,
-        chat_history=chat_history,
-        user_input=user_input
-    )
+        # Run the safety check loop to potentially reprompt for a safer answer
+        try:
+            safe_answer = get_safe_answer(initial_answer)
+            print("Safety check completed successfully")
+        except Exception as e:
+            print(f"Error in safety check: {str(e)}")
+            safe_answer = initial_answer  # Use initial answer if safety check fails
 
-    # Get the response from the language model
-    response = llm.invoke(full_prompt)
-    initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
-
-    # Run the safety check loop to potentially reprompt for a safer answer
-    safe_answer = get_safe_answer(initial_answer)
-
-    # Update conversation memory
-    memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(safe_answer)
-    print("Bot:", safe_answer, flush=True)
-    return jsonify({"answer": safe_answer})
+        # Update conversation memory
+        memory.chat_memory.add_user_message(user_input)
+        memory.chat_memory.add_ai_message(safe_answer)
+        print("Bot:", safe_answer, flush=True)
+        return jsonify({"answer": safe_answer})
+    except Exception as e:
+        print(f"Unexpected error in query endpoint: {str(e)}")
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 @app.route("/load_pdf", methods=["POST"])
 def load_pdf():
@@ -336,6 +393,40 @@ def load_pdf():
         })
     except Exception as e:
         return jsonify({"error": f"Failed to load PDF: {str(e)}"}), 500
+
+@app.route("/", methods=["GET"])
+def home():
+    """
+    Home endpoint for testing the server
+    """
+    return jsonify({
+        "status": "ok",
+        "message": "Kiwi Bot API is running",
+        "endpoints": {
+            "/query": "POST - Send queries to the bot",
+            "/load_pdf": "POST - Load a specific PDF",
+            "/": "GET - Server status"
+        }
+    })
+
+@app.route("/test", methods=["POST"])
+def test():
+    """
+    Simple test endpoint that doesn't require database access
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Empty request data"}), 400
+            
+        query = data.get("query", "No query provided")
+        return jsonify({
+            "status": "ok",
+            "received": query,
+            "response": f"Echo: {query}"
+        })
+    except Exception as e:
+        return jsonify({"error": f"Test error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
