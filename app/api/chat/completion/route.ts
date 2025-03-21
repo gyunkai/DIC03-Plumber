@@ -1,90 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateChatResponse } from "@/app/utils/openai";
 import prisma from "@/app/lib/prisma";
+import axios from 'axios';
 
-export async function POST(request: NextRequest) {
+// Define message type
+interface Message {
+    content: string;
+    sender: 'user' | 'bot';
+    timestamp?: Date;
+}
+
+export async function POST(req: NextRequest) {
     try {
-        // Get session cookie
-        const sessionCookie = request.cookies.get("session");
-
-        // If no session cookie, user is not authenticated
-        if (!sessionCookie) {
-            return NextResponse.json(
-                { error: "Not authenticated" },
-                { status: 401 }
-            );
-        }
-
-        // Parse session data
-        let sessionData;
-        try {
-            sessionData = JSON.parse(sessionCookie.value);
-        } catch (error) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // If no user ID in session, user is not authenticated
-        if (!sessionData.userId) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // Get request body
-        const body = await request.json();
+        const body = await req.json();
         const { messages, pdfKey } = body;
 
-        if (!messages || !Array.isArray(messages)) {
-            return NextResponse.json(
-                { error: "Messages array is required" },
-                { status: 400 }
-            );
+        // Get the latest user message
+        const lastUserMessage = messages.filter((m: Message) => m.sender === 'user').pop();
+
+        if (!lastUserMessage) {
+            return NextResponse.json({
+                success: false,
+                error: "No user message found"
+            }, { status: 400 });
         }
 
-        // Format messages for OpenAI
-        const formattedMessages = messages.map(msg => ({
-            role: msg.sender === "user" ? "user" : "assistant",
-            content: msg.content
-        }));
+        // Forward request to /api/chat
+        const chatResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: lastUserMessage.content,
+                pdfName: pdfKey,
+            }),
+        });
 
-        // Generate response from OpenAI
-        const responseText = await generateChatResponse(formattedMessages);
-
-        // Create a response message
-        const responseMessage = {
-            content: responseText,
-            sender: "bot",
-            timestamp: new Date(),
-        };
-
-        // Save the message to the database
-        try {
-            await prisma.chatMessage.create({
-                data: {
-                    content: responseText,
-                    sender: "bot",
-                    userId: sessionData.userId,
-                    pdfKey,
-                },
-            });
-        } catch (dbError) {
-            console.error("Error saving bot message to database:", dbError);
-            // Continue even if database save fails
+        if (!chatResponse.ok) {
+            throw new Error("Failed to get response from chat API");
         }
 
+        const chatData = await chatResponse.json();
+
+        // Format response to match the expected format for this endpoint
         return NextResponse.json({
             success: true,
-            message: responseMessage,
+            message: {
+                content: chatData.answer,
+                sender: "bot"
+            }
         });
     } catch (error) {
-        console.error("Error generating chat completion:", error);
-        return NextResponse.json(
-            { error: "Failed to generate chat completion" },
-            { status: 500 }
-        );
+        console.error("Error processing completion:", error);
+        return NextResponse.json({
+            success: false,
+            error: "Failed to process completion request"
+        }, { status: 500 });
     }
 } 

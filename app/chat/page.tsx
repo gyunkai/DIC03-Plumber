@@ -178,14 +178,14 @@ export default function ChatPage() {
       }
 
       // Get bot response
-      const completionResponse = await fetch('/api/chat/completion', {
+      const completionResponse = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          pdfKey: selectedPdf,
+          message: userMessage.content,
+          pdfName: selectedPdf,
         }),
       });
 
@@ -194,8 +194,14 @@ export default function ChatPage() {
       }
 
       const completionData = await completionResponse.json();
-      if (completionData.success && completionData.message) {
-        setMessages(prev => [...prev, completionData.message]);
+      if (completionData.answer) {
+        const botMessage: Message = {
+          content: completionData.answer,
+          sender: "bot"
+        };
+        setMessages(prev => [...prev, botMessage]);
+      } else {
+        throw new Error("Invalid response format from bot");
       }
     } catch (error) {
       console.error("Error in chat interaction:", error);
