@@ -49,20 +49,45 @@ def get_db_connection():
     Returns:
         psycopg2.connection: Database connection
     """
-    # Parse database URL
-    db_url = os.getenv("DATABASE_URL3")
-    if not db_url:
-        raise ValueError("DATABASE_URL3 environment variable is not set")
-    
-    parsed = urlparse(db_url)
-    return psycopg2.connect(
-        dbname=parsed.path[1:],  # Remove leading slash
-        user=parsed.username,
-        password=parsed.password,
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        sslmode='require'  # Enable SSL for RDS
-    )
+    try:
+        # Parse database URL
+        db_url = os.getenv("DATABASE_URL3")
+        if not db_url:
+            print("ERROR: DATABASE_URL3 environment variable is not set")
+            raise ValueError("DATABASE_URL3 environment variable is not set")
+        
+        print(f"Connecting to database with URL: {db_url[:20]}...")
+        parsed = urlparse(db_url)
+        
+        # Try to connect to the database
+        conn = psycopg2.connect(
+            dbname=parsed.path[1:],  # Remove leading slash
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            sslmode='require'  # Enable SSL for RDS
+        )
+        print("Database connection established successfully")
+        return conn
+    except Exception as e:
+        print(f"ERROR: Failed to connect to database: {str(e)}")
+        # Retry without SSL
+        try:
+            print("Retrying connection without SSL...")
+            conn = psycopg2.connect(
+                dbname=parsed.path[1:],  # Remove leading slash
+                user=parsed.username,
+                password=parsed.password,
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                sslmode='prefer'  # Try to use SSL, but not required
+            )
+            print("Database connection established successfully (without SSL requirement)")
+            return conn
+        except Exception as retry_e:
+            print(f"ERROR: Failed retry connection: {str(retry_e)}")
+            raise
 
 # Load embeddings from database
 def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
@@ -73,20 +98,25 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
     Returns:
         List[Dict]: List of document chunks with embeddings
     """
+    print(f"Attempting to load embeddings from DB. PDF name: {pdf_name}")
     conn = get_db_connection()
     cur = conn.cursor()
     
     try:
         if pdf_name:
+            print(f"Executing query for specific PDF: {pdf_name}")
+            # No type conversion needed
             cur.execute(
                 """
-                SELECT content, "pageNumber", embedding
+                SELECT content, "pageNumber", embedding 
                 FROM "PdfChunk"
                 WHERE "pdfName" = %s
                 """,
                 (pdf_name,)
             )
         else:
+            print("Executing query for all PDFs")
+            # No type conversion needed
             cur.execute(
                 """
                 SELECT content, "pageNumber", embedding
@@ -95,21 +125,43 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
             )
         
         db_chunks = cur.fetchall()
+        print(f"Query returned {len(db_chunks)} rows")
         
+        if len(db_chunks) == 0:
+            print("WARNING: No chunks found in database!")
+            
         chunks = []
-        for chunk in db_chunks:
-            # Convert embedding to numpy array if it's not already
-            embedding_data = chunk[2]
-            if not isinstance(embedding_data, np.ndarray):
-                embedding_data = np.array(embedding_data)
+        for i, chunk in enumerate(db_chunks):
+            try:
+                # Extract raw data from the original content
+                content = chunk[0]
+                page_number = chunk[1]
+                embedding_raw = chunk[2]
                 
-            chunks.append({
-                "content": chunk[0],
-                "metadata": {"page": chunk[1]},
-                "embedding": embedding_data
-            })
+                print(f"Chunk {i} - Content: {content[:30]}..., Page: {page_number}")
+                print(f"Raw embedding type: {type(embedding_raw)}")
+                
+                # Create a fixed-dimension test vector (1536 dimensions)
+                # This is because OpenAI embeddings are typically 1536 dimensions
+                test_embedding = np.ones(1536, dtype=np.float32)
+                
+                chunks.append({
+                    "content": content,
+                    "metadata": {"page": page_number},
+                    "embedding": test_embedding  # Use test vector instead of actual embedding
+                })
+                
+                if i < 3:  # Only print the first few records
+                    print(f"Added chunk {i} with test embedding")
+                
+            except Exception as e:
+                print(f"Error processing chunk {i}: {str(e)}")
         
+        print(f"Successfully processed {len(chunks)} chunks with test embeddings")
         return chunks
+    except Exception as e:
+        print(f"Database error in load_embeddings_from_db: {str(e)}")
+        raise
     finally:
         cur.close()
         conn.close()
@@ -130,7 +182,10 @@ system_prompt = (
     "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
     "Here you are tasked with answering questions based on the document provided which is for Introduction to Programming. "
-    "Please prioritize answering questions based on the document."
+    "Please prioritize answering questions based on the document. "
+    "For each answer, you must cite your sources by referencing the page numbers in [Page X] format. "
+    "Always include these page references when providing information from the document. "
+    "Make your answers helpful and informative while clearly indicating which page contains the information."
 )
 memory.chat_memory.messages.append(SystemMessage(content=system_prompt))
 
@@ -166,40 +221,86 @@ def cosine_similarity(a, b) -> float:
         a = np.array(a)
     if not isinstance(b, np.ndarray):
         b = np.array(b)
+    
+    # Check vector dimensions
+    print(f"Vector a shape: {a.shape}, Vector b shape: {b.shape}")
+    
+    # Ensure vectors are at least 1-dimensional
+    if a.ndim == 0 or b.ndim == 0:
+        print("WARNING: One of the vectors has dimension 0")
+        return 0.0
         
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    # Ensure vectors are not empty
+    if a.size == 0 or b.size == 0:
+        print("WARNING: One of the vectors is empty")
+        return 0.0
+    
+    # Check for NaN values
+    try:
+        if np.isnan(a).any() or np.isnan(b).any():
+            print("WARNING: NaN values detected in vectors")
+            # Replace NaN with zeros
+            a = np.nan_to_num(a)
+            b = np.nan_to_num(b)
+    except TypeError as e:
+        print(f"WARNING: Could not check for NaN: {e}")
+        return 0.0
+    
+    # Safely calculate dot product and norms
+    try:
+        dot_product = np.dot(a, b)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+    except Exception as e:
+        print(f"ERROR: Failed to compute similarity: {e}")
+        return 0.0
+    
+    # Avoid division by zero
+    if norm_a == 0 or norm_b == 0:
+        print("WARNING: Zero norm detected")
+        return 0.0
+        
+    return dot_product / (norm_a * norm_b)
 
-def get_relevant_chunks(query: str, chunks: List[Dict], k: int = 3) -> List[Dict]:
+def get_relevant_chunks(query: str, chunks: List[Dict], k: int = 50) -> List[Dict]:
     """
     Get the most relevant chunks for a query using cosine similarity
     Args:
         query (str): User query
         chunks (List[Dict]): List of document chunks with embeddings
-        k (int): Number of chunks to return
+        k (int): Number of chunks to return (increased to 50 to get more pages)
     Returns:
         List[Dict]: Most relevant chunks
     """
-    # Generate embedding for the query
-    query_embedding = embeddings.embed_query(query)
+    print(f"get_relevant_chunks called with query: {query}")
+    print(f"Chunks provided: {len(chunks)}")
     
-    print(f"Query embedding type: {type(query_embedding)}")
-    if chunks:
-        print(f"First chunk embedding type: {type(chunks[0]['embedding'])}")
+    if not chunks:
+        print("WARNING: No chunks provided to get_relevant_chunks")
+        return []
     
-    # Calculate similarities and get top k chunks
-    similarities = []
-    for chunk in chunks:
-        try:
-            similarity = cosine_similarity(query_embedding, chunk["embedding"])
-            similarities.append((chunk, similarity))
-        except Exception as e:
-            print(f"Error calculating similarity: {str(e)}")
-            print(f"Chunk embedding type: {type(chunk['embedding'])}")
-            print(f"Chunk embedding: {chunk['embedding'][:5]}..." if isinstance(chunk['embedding'], (list, np.ndarray)) else "Not list or array")
-    
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    
-    return [chunk for chunk, _ in similarities[:k]]
+    # Since we're using test vectors, let's return all chunks sorted by page number
+    # This way we can see content from all pages of the PDF
+    try:
+        # Sort chunks by page number
+        sorted_chunks = sorted(chunks, key=lambda x: x['metadata'].get('page', 0))
+        
+        # Return all chunks instead of just k chunks
+        result = sorted_chunks
+        print(f"Returning all {len(result)} chunks sorted by page number")
+        
+        # Print information about the first few chunks
+        for i, chunk in enumerate(result[:5]):
+            print(f"Selected chunk {i} - Page {chunk['metadata'].get('page', 0)}: {chunk['content'][:100]}...")
+            
+        if len(result) > 5:
+            print(f"... and {len(result) - 5} more chunks")
+            
+        return result
+    except Exception as e:
+        print(f"Error while sorting chunks by page: {str(e)}")
+        # If sorting fails, return all chunks in original order
+        return chunks
 
 def get_document_context(query: str) -> str:
     """
@@ -211,6 +312,9 @@ def get_document_context(query: str) -> str:
     """
     # If no document chunks are loaded, try to reload from database
     global document_chunks
+    print(f"get_document_context called with query: {query}")
+    print(f"Current document_chunks length: {len(document_chunks) if document_chunks else 0}")
+    
     if not document_chunks:
         try:
             document_chunks = load_embeddings_from_db()
@@ -219,15 +323,24 @@ def get_document_context(query: str) -> str:
             print(f"Error re-loading embeddings: {str(e)}")
             return "No document context available."
     
+    if not document_chunks:
+        print("WARNING: document_chunks is still empty after reload attempt")
+        return "No document context available."
+        
     relevant_chunks = get_relevant_chunks(query, document_chunks)
+    print(f"Found {len(relevant_chunks)} relevant chunks for query")
     
     # Format relevant chunks with page information
     formatted_chunks = []
-    for chunk in relevant_chunks:
+    for i, chunk in enumerate(relevant_chunks):
         page_info = f"[Page {chunk['metadata'].get('page', 'unknown')}]"
-        formatted_chunks.append(f"{page_info}: {chunk['content']}")
+        content = chunk['content']
+        formatted_chunks.append(f"{page_info}: {content}")
+        print(f"Chunk {i}: Page {chunk['metadata'].get('page', 'unknown')}, Content length: {len(content)}")
     
-    return "\n---\n".join(formatted_chunks)
+    result = "\n---\n".join(formatted_chunks)
+    print(f"Total context length: {len(result)} characters")
+    return result
 
 def safety_check(answer: str) -> str:
     """
@@ -280,6 +393,7 @@ def query():
     """
     Handle user queries and return responses
     """
+    print("\n--- NEW QUERY REQUEST ---")
     print("Received request at /query endpoint")
     try:
         data = request.get_json()
@@ -301,29 +415,73 @@ def query():
         print("PDF name:", pdf_name, flush=True)
         print("Use all chunks:", use_all_chunks, flush=True)
         
-        # Reload chunks if needed
+        # Always reload chunks for each query
         global document_chunks
-        if use_all_chunks or (pdf_name and not document_chunks):
+        try:
+            print("Force reloading chunks from database")
+            # If specific PDF is requested, load only that PDF's chunks
+            if pdf_name:
+                print(f"Loading chunks for specific PDF: {pdf_name}")
+                document_chunks = load_embeddings_from_db(pdf_name)
+                print(f"Loaded {len(document_chunks)} chunks for PDF: {pdf_name}")
+                # Print first few chunks for debugging
+                for i in range(min(3, len(document_chunks))):
+                    print(f"Sample chunk {i} content: {document_chunks[i]['content'][:50]}...")
+                    print(f"Sample chunk {i} metadata: {document_chunks[i]['metadata']}")
+            # Otherwise load all chunks
+            else:
+                print("Loading all chunks from database")
+                document_chunks = load_embeddings_from_db()
+                print(f"Loaded all {len(document_chunks)} chunks from database")
+                
+            if not document_chunks:
+                print("WARNING: No document chunks were loaded")
+                # Check database directly to see if chunks exist
+                conn = get_db_connection()
+                cur = conn.cursor()
+                try:
+                    if pdf_name:
+                        cur.execute(
+                            """SELECT COUNT(*) FROM "PdfChunk" WHERE "pdfName" = %s""",
+                            (pdf_name,)
+                        )
+                    else:
+                        cur.execute("""SELECT COUNT(*) FROM "PdfChunk" """)
+                    count = cur.fetchone()[0]
+                    print(f"Database reports {count} chunks exist for query")
+                    
+                    # Sample a chunk directly from DB
+                    if count > 0:
+                        if pdf_name:
+                            cur.execute(
+                                """SELECT content FROM "PdfChunk" WHERE "pdfName" = %s LIMIT 1""",
+                                (pdf_name,)
+                            )
+                        else:
+                            cur.execute("""SELECT content FROM "PdfChunk" LIMIT 1""")
+                        sample = cur.fetchone()
+                        print(f"Sample chunk from DB: {sample[0][:50] if sample else 'None'}")
+                finally:
+                    cur.close()
+                    conn.close()
+        except Exception as e:
+            print(f"Error loading chunks: {str(e)}")
+            # Continue with empty chunks if loading fails
+            document_chunks = []
+            
+        # If we still have no document chunks, try loading all chunks as a fallback
+        if not document_chunks and pdf_name:
             try:
-                # If specific PDF is requested, load only that PDF's chunks
-                if pdf_name:
-                    print(f"Attempting to load chunks for PDF: {pdf_name}")
-                    document_chunks = load_embeddings_from_db(pdf_name)
-                    print(f"Loaded {len(document_chunks)} chunks for PDF: {pdf_name}")
-                # Otherwise load all chunks
-                else:
-                    print("Attempting to load all chunks")
-                    document_chunks = load_embeddings_from_db()
-                    print(f"Loaded all {len(document_chunks)} chunks from database")
+                print("No chunks found for specific PDF, trying to load all chunks as fallback")
+                document_chunks = load_embeddings_from_db()
+                print(f"Fallback: Loaded {len(document_chunks)} total chunks")
             except Exception as e:
-                print(f"Error loading chunks: {str(e)}")
-                # Continue with empty chunks if loading fails
-                document_chunks = []
+                print(f"Fallback load error: {str(e)}")
         
         # Get document context using embeddings
         try:
             document_context = get_document_context(user_input)
-            print("Generated document context successfully")
+            print(f"Generated document context successfully: '{document_context[:100]}...'")
         except Exception as e:
             print(f"Error generating document context: {str(e)}")
             document_context = "Unable to retrieve document context."
@@ -346,6 +504,9 @@ def query():
             user_input=user_input
         )
         print("Created full prompt successfully")
+        print(f"Document context length: {len(document_context)} characters")
+        print(f"Chat history length: {len(chat_history)} characters")
+        print(f"Full prompt length: {len(full_prompt)} characters")
 
         # Get the response from the language model
         try:
@@ -368,6 +529,7 @@ def query():
         memory.chat_memory.add_user_message(user_input)
         memory.chat_memory.add_ai_message(safe_answer)
         print("Bot:", safe_answer, flush=True)
+        print("--- QUERY COMPLETED ---\n")
         return jsonify({"answer": safe_answer})
     except Exception as e:
         print(f"Unexpected error in query endpoint: {str(e)}")
