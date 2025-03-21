@@ -79,85 +79,18 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// Save a new chat message
-export async function POST(request: NextRequest) {
-    try {
-        // Get session cookie
-        const sessionCookie = request.cookies.get("session");
+// Define message type
+interface Message {
+    content: string;
+    sender: 'user' | 'bot';
+    timestamp?: Date;
+    pdfKey?: string;
+}
 
-        // If no session cookie, user is not authenticated
-        if (!sessionCookie) {
-            return NextResponse.json(
-                { error: "Not authenticated" },
-                { status: 401 }
-            );
-        }
-
-        // Parse session data
-        let sessionData;
-        try {
-            sessionData = JSON.parse(sessionCookie.value);
-        } catch (error) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // If no user ID in session, user is not authenticated
-        if (!sessionData.userId) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // Get request body
-        const body = await request.json();
-        const { content, sender, pdfKey } = body;
-
-        if (!content || !sender) {
-            return NextResponse.json(
-                { error: "Content and sender are required" },
-                { status: 400 }
-            );
-        }
-
-        // Create a new chat message
-        const message = await prisma.chatMessage.create({
-            data: {
-                content,
-                sender,
-                userId: sessionData.userId,
-                pdfKey,
-            },
-        });
-
-        // Generate embedding for the message
-        try {
-            const embedding = await generateEmbedding(content);
-
-            // Save the embedding
-            await prisma.chatEmbedding.create({
-                data: {
-                    messageId: message.id,
-                    embedding,
-                },
-            });
-        } catch (embeddingError) {
-            console.error("Error generating embedding:", embeddingError);
-            // Continue even if embedding fails
-        }
-
-        return NextResponse.json({
-            success: true,
-            message,
-        });
-    } catch (error) {
-        console.error("Error saving chat message:", error);
-        return NextResponse.json(
-            { error: "Failed to save chat message" },
-            { status: 500 }
-        );
-    }
+export async function POST(req: NextRequest) {
+    // We don't need to do anything here, just return success
+    // The actual message processing is handled by the /api/chat route
+    return NextResponse.json({
+        success: true
+    });
 } 
