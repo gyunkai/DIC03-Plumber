@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateChatResponse } from "@/app/utils/openai";
-import prisma from "@/app/lib/prisma";
 import axios from 'axios';
 
 // Define message type
@@ -9,6 +7,9 @@ interface Message {
     sender: 'user' | 'bot';
     timestamp?: Date;
 }
+
+// Define the Kiwi bot API URL (copy from chat/route.ts)
+const KIWI_BOT_URL = 'http://localhost:5000/query';
 
 export async function POST(req: NextRequest) {
     try {
@@ -25,32 +26,47 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        // Forward request to /api/chat
-        const chatResponse = await fetch('/api/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                message: lastUserMessage.content,
-                pdfName: pdfKey,
-            }),
-        });
-
-        if (!chatResponse.ok) {
-            throw new Error("Failed to get response from chat API");
+        // Extract just the filename from the path if it exists (copied from chat/route.ts)
+        let filename = pdfKey;
+        if (pdfKey && pdfKey.includes('/')) {
+            filename = pdfKey.split('/').pop();
+        } else if (pdfKey && pdfKey.includes('\\')) {
+            filename = pdfKey.split('\\').pop();
         }
 
-        const chatData = await chatResponse.json();
+        console.log(`Processing message: "${lastUserMessage.content}"`);
+        console.log(`Using PDF: ${filename}`);
 
-        // Format response to match the expected format for this endpoint
-        return NextResponse.json({
-            success: true,
-            message: {
-                content: chatData.answer,
-                sender: "bot"
-            }
-        });
+        try {
+            // Directly forward user message to kiwi bot (skip the intermediate /api/chat call)
+            const response = await axios.post(KIWI_BOT_URL, {
+                query: lastUserMessage.content,
+                pdf_name: filename,
+                use_all_chunks: true  // Always use all available chunks
+            });
+
+            console.log("Received response from Kiwi Bot");
+
+            // Format response to match the expected format for this endpoint
+            return NextResponse.json({
+                success: true,
+                message: {
+                    content: response.data.answer,
+                    sender: "bot"
+                }
+            });
+        } catch (kiwiBotError) {
+            console.error("Error connecting to Kiwi Bot:", kiwiBotError.message);
+
+            // Return a more specific error message
+            return NextResponse.json({
+                success: false,
+                message: {
+                    content: "Sorry, I couldn't connect to the Kiwi Bot backend. Please make sure it's running at http://localhost:5000.",
+                    sender: "bot"
+                }
+            });
+        }
     } catch (error) {
         console.error("Error processing completion:", error);
         return NextResponse.json({
@@ -58,4 +74,4 @@ export async function POST(req: NextRequest) {
             error: "Failed to process completion request"
         }, { status: 500 });
     }
-} 
+}
