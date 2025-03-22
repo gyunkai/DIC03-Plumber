@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Send, LogOut, User } from "lucide-react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 
 type Message = {
   id?: string;
@@ -291,9 +294,7 @@ export default function ChatPage() {
                 src={getPdfUrl(selectedPdf)}
                 className="w-full h-full border-0"
                 title="PDF Viewer"
-                onLoad={() =>
-                  console.log("PDF loaded successfully (fallback)")
-                }
+                onLoad={() => console.log("PDF loaded successfully (fallback)")}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center">
@@ -324,7 +325,14 @@ export default function ChatPage() {
                         : "bg-gray-100 mr-auto"
                     }`}
                   >
-                    {message.content}
+                    <div className="prose prose-sm">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 ))}
                 <div ref={messagesEndRef} />
