@@ -1,22 +1,8 @@
 # Node.js dependencies
 node_modules/
-.pnp*
-
-# Lock files
-package-lock.json
 
 # Build outputs
 .next/
-build/
-dist/
-out/
-
-# Prisma
-prisma/migrations/
-
-# Coverage reports
-coverage/
-*.lcov
 
 # OS and IDE files
 .DS_Store
@@ -24,15 +10,4 @@ Thumbs.db
 .vscode/
 
 # TypeScript
-*.tsbuildinfo
 next-env.d.ts
-
-# Vercel
-.vercel/
-
-# Storybook
-storybook-static/
-.storybook/out/
-
-# Logs
-npm-debug.log*
