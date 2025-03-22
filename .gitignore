@@ -1,69 +1,38 @@
 # Node.js dependencies
-/node_modules
-/.pnp
-.pnp.*
+node_modules/
+.pnp*
 
-# Yarn
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# Package lock files (if using one, remove others)
+# Lock files
 package-lock.json
-yarn.lock
-pnpm-lock.yaml
 
-# Environment variables
-# .env
-# .env.local
-# .env.development.local
-# .env.test.local
-# .env.production.local
-
-# Logs and debugging
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-*.log
-
-# Next.js build outputs
-/.next/
-/out/
-.next/cache
+# Build outputs
+.next/
+build/
+dist/
+out/
 
 # Prisma
-/prisma/migrations
-
-# Production build
-/build
+prisma/migrations/
 
 # Coverage reports
-/coverage
+coverage/
 *.lcov
 
-# Miscellaneous OS and IDE files
+# OS and IDE files
 .DS_Store
 Thumbs.db
-
-# SSH and credentials
-*.pem
-*.key
-*.crt
-*.cert
-*.pfx
+.vscode/
 
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
 # Vercel
-.vercel
+.vercel/
 
-# Storybook (if used)
-.storybook/out
+# Storybook
+storybook-static/
+.storybook/out/
 
-# VSCode settings (optional, if sharing workspace settings)
-/.vscode/
+# Logs
+npm-debug.log*
