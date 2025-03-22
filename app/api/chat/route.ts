@@ -3,7 +3,7 @@ import axios from 'axios';
 import path from 'path';
 
 // Define the Kiwi bot API URL
-const KIWI_BOT_URL = 'http://localhost:5000/query';
+const KIWI_BOT_URL = 'http://127.0.0.1:5000/query';
 
 export async function POST(req: NextRequest) {
     try {
