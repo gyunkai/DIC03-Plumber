@@ -512,25 +512,25 @@ def query():
     print("\n--- NEW QUERY REQUEST ---")
     print("Received request at /query endpoint")
     try:
-    data = request.get_json()
+        data = request.get_json()
         print("Request data:", data)
-        
+
         if not data:
             print("Error: Empty request data")
             return jsonify({"error": "Empty request data"}), 400
-            
+
         if "query" not in data:
             print("Error: Missing 'query' in request data")
-        return jsonify({"error": "Missing 'query' in JSON payload."}), 400
+            return jsonify({"error": "Missing 'query' in JSON payload."}), 400
 
-    user_input = data["query"]
+        user_input = data["query"]
         pdf_name = data.get("pdf_name")
         use_all_chunks = data.get("use_all_chunks", False)
-        
+
         print("User:", user_input, flush=True)
         print("PDF name:", pdf_name, flush=True)
         print("Use all chunks:", use_all_chunks, flush=True)
-        
+
         # Always reload chunks for each query
         global document_chunks
         try:
@@ -545,14 +545,14 @@ def query():
                 print("Loading all chunks from database")
                 document_chunks = load_embeddings_from_db()
                 print(f"Loaded all {len(document_chunks)} chunks from database")
-                
+
             if not document_chunks:
                 print("WARNING: No document chunks were loaded")
         except Exception as e:
             print(f"Error loading chunks: {str(e)}")
             # Continue with empty chunks if loading fails
             document_chunks = []
-            
+
         # If we still have no document chunks, try loading all chunks as a fallback
         if not document_chunks and pdf_name:
             try:
@@ -561,7 +561,7 @@ def query():
                 print(f"Fallback: Loaded {len(document_chunks)} total chunks")
             except Exception as e:
                 print(f"Fallback load error: {str(e)}")
-        
+
         # Get document context using embeddings
         try:
             print(user_input)
@@ -571,51 +571,51 @@ def query():
             print(f"Error generating document context: {str(e)}")
             document_context = "Unable to retrieve document context."
 
-    # Get conversation history (excluding the system message)
+        # Get conversation history (excluding the system message)
         try:
-    chat_history = "\n".join(
-        [msg.content for msg in memory.chat_memory.messages if msg.__class__.__name__ != "SystemMessage"]
-    )
+            chat_history = "\n".join(
+                [msg.content for msg in memory.chat_memory.messages if msg.__class__.__name__ != "SystemMessage"]
+            )
             print("Retrieved chat history successfully")
         except Exception as e:
             print(f"Error retrieving chat history: {str(e)}")
             chat_history = ""
 
-    # Format the prompt for the LLM
-    full_prompt = prompt_template.format(
-        system_prompt=system_prompt,
-        document_context=document_context,
-        chat_history=chat_history,
-        user_input=user_input
-    )
+        # Format the prompt for the LLM
+        full_prompt = prompt_template.format(
+            system_prompt=system_prompt,
+            document_context=document_context,
+            chat_history=chat_history,
+            user_input=user_input
+        )
         print("Created full prompt successfully")
         print(f"Document context length: {len(document_context)} characters")
         print(f"Chat history length: {len(chat_history)} characters")
         print(f"Full prompt length: {len(full_prompt)} characters")
 
-    # Get the response from the language model
+        # Get the response from the language model
         try:
-    response = llm.invoke(full_prompt)
-    initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
+            response = llm.invoke(full_prompt)
+            initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
             print("Generated initial answer successfully")
         except Exception as e:
             print(f"Error generating answer from LLM: {str(e)}")
             return jsonify({"error": f"Failed to generate response: {str(e)}"}), 500
 
-    # Run the safety check loop to potentially reprompt for a safer answer
+        # Run the safety check loop to potentially reprompt for a safer answer
         try:
-    safe_answer = get_safe_answer(initial_answer)
+            safe_answer = get_safe_answer(initial_answer)
             print("Safety check completed successfully")
         except Exception as e:
             print(f"Error in safety check: {str(e)}")
             safe_answer = initial_answer  # Use initial answer if safety check fails
 
-    # Update conversation memory
-    memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(safe_answer)
-    print("Bot:", safe_answer, flush=True)
+        # Update conversation memory
+        memory.chat_memory.add_user_message(user_input)
+        memory.chat_memory.add_ai_message(safe_answer)
+        print("Bot:", safe_answer, flush=True)
         print("--- QUERY COMPLETED ---\n")
-    return jsonify({"answer": safe_answer})
+        return jsonify({"answer": safe_answer})
     except Exception as e:
         print(f"Unexpected error in query endpoint: {str(e)}")
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
