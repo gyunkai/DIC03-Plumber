@@ -111,12 +111,12 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
         # Establish database connection
         conn = get_db_connection()
         conn.autocommit = True
-        print("Database connection established successfully")
+        # print("Database connection established successfully")
 
         # Set statement timeout to avoid hanging
         with conn.cursor() as cursor:
             cursor.execute("SET statement_timeout = 30000;")  # 30 seconds
-            print("Setting statement timeout to 30 seconds...")
+            # print("Setting statement timeout to 30 seconds...")
             
             # Execute a simple count query first to test database responsiveness
             cursor.execute("SELECT COUNT(*) FROM \"PdfChunk\";")
@@ -272,7 +272,8 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 50) -> List[D
                     print("✓ pgvector extension is installed")
                     
                     # Prepare vector string for query
-                    vector_str = "{" + ",".join(str(x) for x in query_embedding) + "}"
+                    vector_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
                     print(f"Vector string created (first 20 chars): {vector_str[:20]}...")
                     
                     # Execute pgvector similarity search
