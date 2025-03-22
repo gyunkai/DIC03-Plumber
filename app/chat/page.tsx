@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, ChevronLeft, ChevronRight, LogOut, User, FileText } from "lucide-react";
+import { Send, ChevronLeft, ChevronRight, LogOut, User, FileText, BookOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 type Message = {
@@ -38,6 +38,86 @@ export default function ChatPage() {
   const [userLoading, setUserLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedCourse, setSelectedCourse] = useState<string | null>("machine-learning");
+
+
+  const courses = [
+    {
+      id: "machine-learning",
+      name: "Machine Learning",
+      lectures: Array.from({ length: 48 }, (_, i) => ({
+        name: `ML Lecture ${i + 1}`,
+        key: `mlpdf/lecture${i + 1}.pdf`
+      }))
+    },
+    {
+      id: "linear-algebra",
+      name: "Linear Algebra",
+      lectures: Array.from({ length: 28 }, (_, i) => ({
+        name: `LA Lecture ${i + 1}`,
+        key: `lapdf/Lecture ${i + 1}.pdf`
+      }))
+    },
+    {
+      id: "probability",
+      name: "Probability and Statistics",
+      lectures: Array.from({ length: 27 }, (_, i) => ({
+        name: `Prob Lecture ${String(i + 1).padStart(2, '0')}`,
+        key: `pbpdf/Lecture ${String(i + 1).padStart(2, '0')}.pdf`
+      }))
+    },
+    {
+      id: "calculus",
+      name: "Multivariable Calculus",
+      lectures: Array.from({ length: 27 }, (_, i) => ({
+        name: `Calculus Lecture ${i + 1}`,
+        key: `mulpdf/lecture ${i + 1}.pdf`
+      }))
+    }
+  ];
+
+
+  useEffect(() => {
+    // 自动选择ML第一课
+    if (courses.length > 0 && courses[0].lectures.length > 0) {
+      setSelectedCourse("machine-learning");
+      setSelectedPdf(courses[0].lectures[0].key);
+
+      // 立即获取PDF URL
+      (async () => {
+        try {
+          setPdfLoading(true);
+          // 获取预签名URL
+          const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(courses[0].lectures[0].key)}`);
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.url) {
+              setPdfUrl(data.url);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load initial PDF:", error);
+        } finally {
+          setPdfLoading(false);
+        }
+      })();
+    }
+  }, []);  // 只在组件挂载时运行一次
+
+  const getCourseLectures = () => {
+    if (!selectedCourse) return pdfFiles;
+    const course = courses.find(c => c.id === selectedCourse);
+    return course ? course.lectures : pdfFiles;
+  };
+
+  const handleCourseSelect = (courseId: string) => {
+    setSelectedCourse(courseId);
+    const course = courses.find(c => c.id === courseId);
+    if (course && course.lectures.length > 0) {
+      setSelectedPdf(course.lectures[0].key);
+    }
+  };
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -84,10 +164,7 @@ export default function ChatPage() {
         const data = await response.json();
         setPdfFiles(data.files);
 
-        // If there are PDF files, select the first one
-        if (data.files.length > 0) {
-          setSelectedPdf(data.files[0].key);
-        }
+
       } catch (error) {
         console.error("Error fetching PDF list:", error);
       } finally {
@@ -108,7 +185,7 @@ export default function ChatPage() {
         setPdfUrl(null);
 
         // Get pre-signed URL for the PDF
-        const response = await fetch(`/api/pdf-url/${selectedPdf}`);
+        const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(selectedPdf)}`);
 
         if (!response.ok) throw new Error('Failed to fetch PDF URL');
 
@@ -235,7 +312,7 @@ export default function ChatPage() {
 
   // Generate PDF URL (fallback to direct API if pre-signed URL fails)
   const getPdfUrl = (key: string) => {
-    return `/api/pdf/${key}`;
+    return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
   return (
@@ -272,9 +349,24 @@ export default function ChatPage() {
             } overflow-hidden`}
         >
           <div className="p-4">
+            <h2 className="text-lg font-bold mb-4">Courses</h2>
+            <ul className="mb-6">
+              {courses.map((course, index) => (
+                <li
+                  key={index}
+                  onClick={() => handleCourseSelect(course.id)}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
+                    } flex items-center justify-between`}
+                >
+                  <span>{course.name}</span>
+                  <BookOpen className="h-4 w-4 text-gray-500" />
+                </li>
+              ))}
+            </ul>
+
             <h2 className="text-lg font-bold mb-2">PDF Files</h2>
             <ul>
-              {pdfFiles.map((pdf, index) => (
+              {(selectedCourse ? getCourseLectures() : pdfFiles).map((pdf, index) => (
                 <li
                   key={index}
                   onClick={() => setSelectedPdf(pdf.key)}
@@ -294,7 +386,7 @@ export default function ChatPage() {
           {/* Sidebar toggle button */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="absolute top-20 left-4 z-10 bg-white rounded-full p-2 shadow"
+            className="absolute top-15 left-25 z-10 bg-white rounded-full p-2 shadow"
           >
             {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
           </button>
