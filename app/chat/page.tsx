@@ -43,6 +43,17 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedCourse, setSelectedCourse] = useState<string | null>("machine-learning");
 
+  // ── NEW: Quiz Mode States ─────────────────────────
+  // isQuizMode toggles between chat and quiz interfaces.
+  const [isQuizMode, setIsQuizMode] = useState(false);
+  // Dummy quiz question and answer options.
+  const [quizQuestion] = useState("What is the capital of France?");
+  const [quizOptions] = useState(["Paris", "Berlin", "Rome", "Madrid"]);
+  // quizFeedback stores the message (Correct/Incorrect) after clicking an option.
+  const [quizFeedback, setQuizFeedback] = useState("");
+  // Constant that holds the correct answer.
+  const correctAnswer = "Paris";
+  // ── End NEW: Quiz Mode States ─────────────────────────
 
   const courses = [
     {
@@ -302,10 +313,43 @@ export default function ChatPage() {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
+  // ── NEW: Handle Quiz Answer Click ──
+  // This function compares the selected answer with the correct answer.
+  const handleQuizAnswer = (selectedOption: string) => {
+    if (selectedOption === correctAnswer) {
+      setQuizFeedback("Correct!");
+    } else {
+      setQuizFeedback("Incorrect. Try again.");
+    }
+  };
+
+  // ── NEW: Toggle Quiz Mode ──
+  // Toggles between chat mode and quiz mode and clears previous quiz feedback.
+  const toggleQuizMode = () => {
+    setIsQuizMode((prev) => !prev);
+    setQuizFeedback("");
+  };
+
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
+        
+        {/* ── NEW: Upper Left Quiz Mode Toggle Button ──
+            Added here next to the title as an alternative control.
+            This button toggles quiz mode and its label updates accordingly. */}
+      <div className="flex items-center">
+          <button
+            onClick={toggleQuizMode}
+            className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
+          >
+            {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
+          </button>
+        </div>
+        {/* ── End NEW: Upper Left Quiz Mode Toggle Button ── */}
+
+        {/* User info and logout button */}
+
         <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
         {userLoading ? (
           <div className="flex items-center">
