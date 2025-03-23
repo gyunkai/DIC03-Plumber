@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, ChevronLeft, ChevronRight, LogOut, User, FileText } from "lucide-react";
+import { Send, ChevronLeft, ChevronRight, LogOut, User, FileText, BookOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 
 type Message = {
   id?: string;
@@ -38,38 +41,125 @@ export default function ChatPage() {
   const [userLoading, setUserLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedCourse, setSelectedCourse] = useState<string | null>("machine-learning");
+
+  // ── NEW: Quiz Mode States ─────────────────────────
+  // isQuizMode toggles between chat and quiz interfaces.
+  const [isQuizMode, setIsQuizMode] = useState(false);
+  // Dummy quiz question and answer options.
+  const [quizQuestion] = useState("What is the capital of France?");
+  const [quizOptions] = useState(["Paris", "Berlin", "Rome", "Madrid"]);
+  // quizFeedback stores the message (Correct/Incorrect) after clicking an option.
+  const [quizFeedback, setQuizFeedback] = useState("");
+  // Constant that holds the correct answer.
+  const correctAnswer = "Paris";
+  // ── End NEW: Quiz Mode States ─────────────────────────
+
+  const courses = [
+    {
+      id: "machine-learning",
+      name: "Machine Learning",
+      lectures: Array.from({ length: 48 }, (_, i) => ({
+        name: `ML Lecture ${i + 1}`,
+        key: `mlpdf/lecture${i + 1}.pdf`
+      }))
+    },
+    {
+      id: "linear-algebra",
+      name: "Linear Algebra",
+      lectures: Array.from({ length: 28 }, (_, i) => ({
+        name: `LA Lecture ${i + 1}`,
+        key: `lapdf/Lecture ${i + 1}.pdf`
+      }))
+    },
+    {
+      id: "probability",
+      name: "Probability and Statistics",
+      lectures: Array.from({ length: 27 }, (_, i) => ({
+        name: `Prob Lecture ${String(i + 1).padStart(2, '0')}`,
+        key: `pbpdf/Lecture ${String(i + 1).padStart(2, '0')}.pdf`
+      }))
+    },
+    {
+      id: "calculus",
+      name: "Multivariable Calculus",
+      lectures: Array.from({ length: 27 }, (_, i) => ({
+        name: `Calculus Lecture ${i + 1}`,
+        key: `mulpdf/lecture ${i + 1}.pdf`
+      }))
+    }
+  ];
+
+
+  useEffect(() => {
+    // 自动选择ML第一课
+    if (courses.length > 0 && courses[0].lectures.length > 0) {
+      setSelectedCourse("machine-learning");
+      setSelectedPdf(courses[0].lectures[0].key);
+
+      // 立即获取PDF URL
+      (async () => {
+        try {
+          setPdfLoading(true);
+          // 获取预签名URL
+          const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(courses[0].lectures[0].key)}`);
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.url) {
+              setPdfUrl(data.url);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load initial PDF:", error);
+        } finally {
+          setPdfLoading(false);
+        }
+      })();
+    }
+  }, []);  // 只在组件挂载时运行一次
+
+  const getCourseLectures = () => {
+    if (!selectedCourse) return pdfFiles;
+    const course = courses.find(c => c.id === selectedCourse);
+    return course ? course.lectures : pdfFiles;
+  };
+
+  const handleCourseSelect = (courseId: string) => {
+    setSelectedCourse(courseId);
+    const course = courses.find(c => c.id === courseId);
+    if (course && course.lectures.length > 0) {
+      setSelectedPdf(course.lectures[0].key);
+    }
+  };
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Scroll when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // Get user information
+  // Fetch user info
   useEffect(() => {
     async function fetchUserInfo() {
       try {
-        const response = await fetch('/api/user/profile');
+        const response = await fetch("/api/user/profile");
         if (!response.ok) {
-          // If not authenticated, redirect to login page
-          router.push('/login');
+          router.push("/login");
           return;
         }
-
         const data = await response.json();
         setUser(data.user);
       } catch (error) {
-        console.error('Error fetching user info:', error);
-        router.push('/login');
+        console.error("Error fetching user info:", error);
+        router.push("/login");
       } finally {
         setUserLoading(false);
       }
     }
-
     fetchUserInfo();
   }, [router]);
 
@@ -78,23 +168,18 @@ export default function ChatPage() {
     async function fetchPdfList() {
       try {
         setLoading(true);
-        const response = await fetch('/api/pdf-list');
-
-        if (!response.ok) throw new Error('Failed to fetch PDF list');
+        const response = await fetch("/api/pdf-list");
+        if (!response.ok) throw new Error("Failed to fetch PDF list");
         const data = await response.json();
         setPdfFiles(data.files);
 
-        // If there are PDF files, select the first one
-        if (data.files.length > 0) {
-          setSelectedPdf(data.files[0].key);
-        }
+
       } catch (error) {
         console.error("Error fetching PDF list:", error);
       } finally {
         setLoading(false);
       }
     }
-
     fetchPdfList();
   }, []);
 
@@ -102,13 +187,12 @@ export default function ChatPage() {
   useEffect(() => {
     async function fetchPdfUrl() {
       if (!selectedPdf) return;
-
       try {
         setPdfLoading(true);
         setPdfUrl(null);
 
         // Get pre-signed URL for the PDF
-        const response = await fetch(`/api/pdf-url/${selectedPdf}`);
+        const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(selectedPdf)}`);
 
         if (!response.ok) throw new Error('Failed to fetch PDF URL');
 
@@ -122,7 +206,6 @@ export default function ChatPage() {
         setPdfLoading(false);
       }
     }
-
     fetchPdfUrl();
   }, [selectedPdf]);
 
@@ -130,15 +213,14 @@ export default function ChatPage() {
   useEffect(() => {
     async function loadChatMessages() {
       if (!selectedPdf) return;
-
       try {
-        const response = await fetch(`/api/chat/messages?pdfKey=${encodeURIComponent(selectedPdf)}`);
-
+        const response = await fetch(
+          `/api/chat/messages?pdfKey=${encodeURIComponent(selectedPdf)}`
+        );
         if (!response.ok) {
           console.error("Failed to load chat messages");
           return;
         }
-
         const data = await response.json();
         if (data.success && Array.isArray(data.messages)) {
           setMessages(data.messages);
@@ -147,24 +229,21 @@ export default function ChatPage() {
         console.error("Error loading chat messages:", error);
       }
     }
-
     loadChatMessages();
   }, [selectedPdf]);
 
   const handleSendMessage = async () => {
     if (input.trim() === "" || sendingMessage) return;
-
     const userMessage: Message = { content: input, sender: "user" };
     setMessages([...messages, userMessage]);
     setInput("");
     setSendingMessage(true);
-
     try {
       // Save user message to database
-      const saveResponse = await fetch('/api/chat/messages', {
-        method: 'POST',
+      const saveResponse = await fetch("/api/chat/messages", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           content: userMessage.content,
@@ -172,38 +251,42 @@ export default function ChatPage() {
           pdfKey: selectedPdf,
         }),
       });
-
       if (!saveResponse.ok) {
         console.error("Failed to save user message");
       }
-
       // Get bot response
-      const completionResponse = await fetch('/api/chat/completion', {
-        method: 'POST',
+      const completionResponse = await fetch("/api/chat", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          pdfKey: selectedPdf,
+          message: userMessage.content,
+          pdfName: selectedPdf,
         }),
       });
-
       if (!completionResponse.ok) {
         throw new Error("Failed to get bot response");
       }
-
       const completionData = await completionResponse.json();
-      if (completionData.success && completionData.message) {
-        setMessages(prev => [...prev, completionData.message]);
+      if (completionData.answer) {
+        const botMessage: Message = {
+          content: completionData.answer,
+          sender: "bot",
+        };
+        setMessages((prev) => [...prev, botMessage]);
+      } else {
+        throw new Error("Invalid response format from bot");
       }
     } catch (error) {
       console.error("Error in chat interaction:", error);
-      // Add a fallback bot message if there's an error
-      setMessages(prev => [...prev, {
-        content: "Sorry, I encountered an error. Please try again.",
-        sender: "bot"
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: "Sorry, I encountered an error. Please try again.",
+          sender: "bot",
+        },
+      ]);
     } finally {
       setSendingMessage(false);
     }
@@ -212,32 +295,59 @@ export default function ChatPage() {
   // Handle logout
   const handleLogout = async () => {
     try {
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
       });
-
       if (response.ok) {
-        // Redirect to login page after successful logout
-        router.push('/login');
+        router.push("/login");
       } else {
-        console.error('Logout failed');
+        console.error("Logout failed");
       }
     } catch (error) {
-      console.error('Error during logout:', error);
+      console.error("Error during logout:", error);
     }
   };
 
-  // Generate PDF URL (fallback to direct API if pre-signed URL fails)
+  // Generate PDF URL (fallback)
   const getPdfUrl = (key: string) => {
-    return `/api/pdf/${key}`;
+    return `/api/pdf?key=${encodeURIComponent(key)}`;
+  };
+
+  // ── NEW: Handle Quiz Answer Click ──
+  // This function compares the selected answer with the correct answer.
+  const handleQuizAnswer = (selectedOption: string) => {
+    if (selectedOption === correctAnswer) {
+      setQuizFeedback("Correct!");
+    } else {
+      setQuizFeedback("Incorrect. Try again.");
+    }
+  };
+
+  // ── NEW: Toggle Quiz Mode ──
+  // Toggles between chat mode and quiz mode and clears previous quiz feedback.
+  const toggleQuizMode = () => {
+    setIsQuizMode((prev) => !prev);
+    setQuizFeedback("");
   };
 
   return (
-    <div className="w-full h-screen bg-white rounded-3xl overflow-hidden flex flex-col">
-      {/* Header with user info and logout button */}
-      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold">Chat Interface</h1>
+    <div className="w-full h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
+        {/* ── NEW: Upper Left Quiz Mode Toggle Button ──
+            Added here next to the title as an alternative control.
+            This button toggles quiz mode and its label updates accordingly. */}
+      <div className="flex items-center">
+          <button
+            onClick={toggleQuizMode}
+            className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
+          >
+            {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
+          </button>
+          <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
+        </div>
 
+        <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
         {userLoading ? (
           <div className="flex items-center">
             <div className="animate-pulse bg-gray-200 h-8 w-24 rounded"></div>
@@ -246,7 +356,9 @@ export default function ChatPage() {
           <div className="flex items-center">
             <div className="flex items-center mr-4">
               <User className="h-5 w-5 text-gray-500 mr-2" />
-              <span className="font-medium">{user?.name || 'User'}</span>
+              <span className="font-medium text-gray-700">
+                {user?.name || "User"}
+              </span>
             </div>
             <button
               onClick={handleLogout}
@@ -266,9 +378,36 @@ export default function ChatPage() {
             } overflow-hidden`}
         >
           <div className="p-4">
+            <h2 className="text-lg font-bold mb-4">Current Courses</h2>
+            <ul className="mb-6">
+              <li
+                onClick={() => handleCourseSelect("machine-learning")}
+                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === "machine-learning" ? "bg-blue-100" : ""
+                  } flex items-center justify-between`}
+              >
+                <span>Machine Learning</span>
+                <BookOpen className="h-4 w-4 text-gray-500" />
+              </li>
+            </ul>
+
+            <h2 className="text-lg font-bold mb-4">Prerequisite Courses</h2>
+            <ul className="mb-6">
+              {courses.slice(1).map((course, index) => (
+                <li
+                  key={index}
+                  onClick={() => handleCourseSelect(course.id)}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
+                    } flex items-center justify-between`}
+                >
+                  <span>{course.name}</span>
+                  <BookOpen className="h-4 w-4 text-gray-500" />
+                </li>
+              ))}
+            </ul>
+
             <h2 className="text-lg font-bold mb-2">PDF Files</h2>
-            <ul>
-              {pdfFiles.map((pdf, index) => (
+            <ul className="overflow-y-auto max-h-[calc(100vh-350px)] pr-1">
+              {(selectedCourse ? getCourseLectures() : pdfFiles).map((pdf, index) => (
                 <li
                   key={index}
                   onClick={() => setSelectedPdf(pdf.key)}
@@ -288,7 +427,7 @@ export default function ChatPage() {
           {/* Sidebar toggle button */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="absolute top-20 left-4 z-10 bg-white rounded-full p-2 shadow"
+            className="absolute top-10 left-5 z-10 bg-white rounded-full p-2 shadow"
           >
             {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
           </button>
@@ -328,14 +467,12 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Chat area - now takes 30% of the width and full height */}
-          <div className="w-[30%] border-l border-gray-200 flex flex-col">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold">Chat</h2>
+          {/* Chat Section (50% width) */}
+          <div className="w-1/2 border-l border-gray-200 flex flex-col">
+            <div className="p-4 border-b border-gray-200 bg-white shadow-sm">
+              <h2 className="text-xl font-bold text-gray-800">Chat</h2>
             </div>
-
-            {/* Messages container - takes all available height except input area */}
-            <div className="flex-1 p-4 overflow-y-auto">
+            <div className="flex-1 p-4 overflow-y-auto bg-white">
               {messages.length === 0 ? (
                 <div className="text-gray-500 text-center mt-4">
                   No messages yet. Start a conversation!
@@ -345,28 +482,34 @@ export default function ChatPage() {
                   {messages.map((message, index) => (
                     <div
                       key={message.id || index}
-                      className={`mb-3 p-3 rounded ${message.sender === "user"
+                      className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
                         ? "bg-blue-100 ml-auto"
-                        : "bg-gray-100"
-                        } max-w-[90%] ${message.sender === "user" ? "ml-auto" : "mr-auto"
+                        : "bg-gray-100 mr-auto"
                         }`}
                     >
-                      {message.content}
+                      <div className="prose prose-sm">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   ))}
                   <div ref={messagesEndRef} />
                 </>
               )}
             </div>
-
-            {/* Input area - fixed at bottom */}
-            <div className="p-4 border-t border-gray-200">
+            <div className="p-4 border-t border-gray-200 bg-white">
               <div className="flex">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                  onKeyPress={(e) =>
+                    e.key === "Enter" && handleSendMessage()
+                  }
                   placeholder="Type your question..."
                   disabled={sendingMessage}
                   className="flex-1 border border-gray-300 rounded-l-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
