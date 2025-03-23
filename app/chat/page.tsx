@@ -45,6 +45,7 @@ export default function ChatPage() {
 
   // ── NEW: Quiz Mode States ─────────────────────────
   // isQuizMode toggles between chat and quiz interfaces.
+  
   const [isQuizMode, setIsQuizMode] = useState(false);
   // Dummy quiz question and answer options.
   const [quizQuestion] = useState("What is the capital of France?");
@@ -52,7 +53,18 @@ export default function ChatPage() {
   // quizFeedback stores the message (Correct/Incorrect) after clicking an option.
   const [quizFeedback, setQuizFeedback] = useState("");
   // Constant that holds the correct answer.
-  const correctAnswer = "Paris";
+  const QuizAnswer = "Paris";
+  const correctAnswer = QuizAnswer;
+  const explanation = "Paris is the capital and largest city of France.";
+  
+  const handleQuizAnswer = (selectedOption: string) => {
+    if (selectedOption === QuizAnswer) {
+      setQuizFeedback("Correct!");
+    } else {
+      setQuizFeedback(`Incorrect! The correct answer is ${QuizAnswer}. ${explanation}`);
+    }
+  };
+
   // ── End NEW: Quiz Mode States ─────────────────────────
 
   const courses = [
@@ -315,13 +327,7 @@ export default function ChatPage() {
 
   // ── NEW: Handle Quiz Answer Click ──
   // This function compares the selected answer with the correct answer.
-  const handleQuizAnswer = (selectedOption: string) => {
-    if (selectedOption === correctAnswer) {
-      setQuizFeedback("Correct!");
-    } else {
-      setQuizFeedback("Incorrect. Try again.");
-    }
-  };
+
 
   // ── NEW: Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
