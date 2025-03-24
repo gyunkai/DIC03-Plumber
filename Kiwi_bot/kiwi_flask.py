@@ -111,15 +111,15 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
         # Establish database connection
         conn = get_db_connection()
         conn.autocommit = True
-        print("Database connection established successfully")
+        # print("Database connection established successfully")
 
         # Set statement timeout to avoid hanging
         with conn.cursor() as cursor:
             cursor.execute("SET statement_timeout = 30000;")  # 30 seconds
-            print("Setting statement timeout to 30 seconds...")
+            # print("Setting statement timeout to 30 seconds...")
             
             # Execute a simple count query first to test database responsiveness
-            cursor.execute("SELECT COUNT(*) FROM \"PdfChunk\";")
+            # cursor.execute("SELECT COUNT(*) FROM \"PdfChunk\";")
             total_chunks = cursor.fetchone()[0]
             print(f"Found {total_chunks} total chunks in database. Query took {time.time() - start_time:.2f} seconds")
             
@@ -203,7 +203,7 @@ system_prompt = (
     "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
     "Here you are tasked with answering questions based on the document provided which is for Introduction to Programming. "
-    "Please prioritize answering questions based on the document. "
+    "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
     "For each answer, you must cite your sources by referencing the page numbers in [Page X] format. "
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
@@ -228,156 +228,55 @@ prompt_template = PromptTemplate(
     )
 )
 
-def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 50) -> List[Dict]:
-    """
-    Get the most relevant chunks for a query using pgvector similarity search
+def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Dict]:
+    query_embedding = embeddings.embed_query(query)
     
-    Args:
-        query (str): User query
-        pdf_name (str, optional): PDF name to restrict search
-        k (int): Number of chunks to return
-    Returns:
-        List[Dict]: Most relevant chunks
-    """
-    global document_chunks
-    print(f"get_relevant_chunks called with query: {query}")
+    conn = get_db_connection()
+    chunks = []
     
     try:
-        # Generate embedding for the query
-        print("Generating query embedding...")
-        query_embedding = embeddings.embed_query(query)
-        
-        if isinstance(query_embedding, np.ndarray):
-            # Convert numpy array to list for database query
-            query_embedding = query_embedding.tolist()
-        
-        print(f"Generated query embedding with length: {len(query_embedding)}")
-        
-        # Perform similarity search using pgvector directly
-        conn = None
-        try:
-            # Establish database connection for similarity search
-            conn = get_db_connection()
-            conn.autocommit = True
+        with conn.cursor() as cursor:
+            cursor.execute("SET statement_timeout = 30000;")
             
-            with conn.cursor() as cursor:
-                # Set timeout
-                cursor.execute("SET statement_timeout = 30000;")  # 30 seconds
-                
-                # Check if pgvector extension is installed
-                cursor.execute("SELECT COUNT(*) FROM pg_extension WHERE extname = 'vector'")
-                has_pgvector = cursor.fetchone()[0] > 0
-                
-                if has_pgvector:
-                    print("✓ pgvector extension is installed")
-                    
-                    # Prepare vector string for query
-                    vector_str = "{" + ",".join(str(x) for x in query_embedding) + "}"
-                    print(f"Vector string created (first 20 chars): {vector_str[:20]}...")
-                    
-                    # Execute pgvector similarity search
-                    if pdf_name:
-                        sql = """
-                        SELECT id, content, "pageNumber", 1 - (embedding <=> %s::vector) as similarity
-                        FROM "PdfChunk" 
-                        WHERE "pdfName" = %s
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s;
-                        """
-                        print(f"Executing pgvector similarity search for PDF: {pdf_name}")
-                        cursor.execute(sql, (vector_str, pdf_name, vector_str, k))
-                    else:
-                        sql = """
-                        SELECT id, content, "pageNumber", "pdfName", 1 - (embedding <=> %s::vector) as similarity
-                        FROM "PdfChunk" 
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s;
-                        """
-                        print(f"Executing pgvector similarity search for all PDFs")
-                        cursor.execute(sql, (vector_str, vector_str, k))
-                    
-                    # Process results
-                    rows = cursor.fetchall()
-                    print(f"✓ Similarity search successful! Found {len(rows)} chunks")
-                    
-                    # Prepare result chunks
-                    similar_chunks = []
-                    for row in rows:
-                        if pdf_name:
-                            id, content, page_number, similarity = row
-                            pdf = pdf_name
-                        else:
-                            id, content, page_number, pdf, similarity = row
-                        
-                        similar_chunks.append({
-                            "id": id,
-                            "content": content,
-                            "metadata": {
-                                "page": page_number,
-                                "pdf_name": pdf,
-                                "source": f"{pdf} - Page {page_number}",
-                                "similarity": similarity
-                            }
-                        })
-                    
-                    # Print some info about the results
-                    for i, chunk in enumerate(similar_chunks[:3]):
-                        similarity = chunk['metadata'].get('similarity', 'N/A')
-                        print(f"Chunk {i} - Page {chunk['metadata'].get('page', 'unknown')}, "
-                                f"Similarity: {similarity}, Content: {chunk['content'][:50]}...")
-                    
-                    return similar_chunks
-                else:
-                    print("⚠️ pgvector extension is NOT installed in the database")
-                    print("Falling back to page order search")
-        except Exception as e:
-            print(f"⚠️ Error during pgvector similarity search: {e}")
-            print(f"Error details: {traceback.format_exc()}")
-            print("Falling back to page order search")
-        finally:
-            if conn:
-                conn.close()
-                print("Database connection closed")
-        
-        # If we got here, pgvector search failed or is not available
-        # Use the document_chunks from memory as fallback
-        print("Using in-memory document chunks sorted by page number")
-        
-        # If no document chunks available, return empty list
-        if not document_chunks:
-            print("WARNING: No document chunks available for fallback sort")
-            return []
-        
-        # Filter by PDF name if specified
-        filtered_chunks = document_chunks
-        if pdf_name:
-            filtered_chunks = [c for c in document_chunks if c.get('metadata', {}).get('pdf_name') == pdf_name]
-        
-        # Sort by page number
-        sorted_chunks = sorted(filtered_chunks, key=lambda x: x['metadata'].get('page', 0))
-            
-        # Print some info about the fallback results
-        for i, chunk in enumerate(sorted_chunks[:3]):
-            print(f"Fallback chunk {i} - Page {chunk['metadata'].get('page', 'unknown')}, "
-                  f"Content: {chunk['content'][:50]}...")
-        
-        return sorted_chunks[:k]
-            
-    except Exception as e:
-        print(f"Error in get_relevant_chunks: {str(e)}")
-        print(f"Error details: {traceback.format_exc()}")
-        
-        # Last resort fallback - try to use global document_chunks
-        if document_chunks:
-            # Filter by PDF name if specified
-            filtered_chunks = document_chunks
+            # Use pgvector similarity search
             if pdf_name:
-                filtered_chunks = [c for c in document_chunks if c.get('metadata', {}).get('pdf_name') == pdf_name]
-            
-            # Sort by page number
-            return sorted(filtered_chunks, key=lambda x: x['metadata'].get('page', 0))[:k]
-        
-        return []  # Return empty list if nothing else works
+                sql = """
+                SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+                FROM "PdfChunk"
+                WHERE "pdfName" = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s;
+                """
+                cursor.execute(sql, (query_embedding, pdf_name, query_embedding, k))
+            else:
+                sql = """
+                SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+                FROM "PdfChunk"
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s;
+                """
+                cursor.execute(sql, (query_embedding, query_embedding, k))
+
+            rows = cursor.fetchall()
+
+            for row in rows:
+                id, content, page_number, pdf, distance = row
+                chunks.append({
+                    "id": id,
+                    "content": content,
+                    "metadata": {
+                        "page": page_number,
+                        "pdf_name": pdf,
+                        "source": f"{pdf} - Page {page_number}",
+                        "distance": distance
+                    }
+                })
+    except Exception as e:
+        print(f"Error in similarity search: {e}")
+    finally:
+        conn.close()
+
+    return chunks
 
 def get_fallback_chunks(pdf_name: str = None, k: int = 10) -> List[Dict]:
     """
@@ -451,7 +350,7 @@ def get_document_context(query: str) -> str:
     for i, chunk in enumerate(relevant_chunks):
         page_info = f"[Page {chunk['metadata'].get('page', 'unknown')}]"
         content = chunk['content']
-        formatted_chunks.append(f"{page_info}: {content}")
+        formatted_chunks.append(f"{page_info+1}: {content}")
         print(f"Chunk {i}: Page {chunk['metadata'].get('page', 'unknown')}, Content length: {len(content)}")
     
     result = "\n---\n".join(formatted_chunks)
@@ -506,119 +405,39 @@ def get_safe_answer(initial_answer: str, max_attempts: int = 3) -> str:
 
 @app.route("/query", methods=["POST"])
 def query():
-    """
-    Handle user queries and return responses
-    """
-    print("\n--- NEW QUERY REQUEST ---")
-    print("Received request at /query endpoint")
-    try:
-        data = request.get_json()
-        print("Request data:", data)
+    data = request.get_json()
+    if not data or "query" not in data:
+        return jsonify({"error": "Missing 'query' in request."}), 400
 
-        if not data:
-            print("Error: Empty request data")
-            return jsonify({"error": "Empty request data"}), 400
+    user_input = data["query"]
+    pdf_name = data.get("pdf_name")
 
-        if "query" not in data:
-            print("Error: Missing 'query' in request data")
-            return jsonify({"error": "Missing 'query' in JSON payload."}), 400
+    relevant_chunks = get_relevant_chunks(user_input, pdf_name, k=5)
 
-        user_input = data["query"]
-        pdf_name = data.get("pdf_name")
-        use_all_chunks = data.get("use_all_chunks", False)
-
-        print("User:", user_input, flush=True)
-        print("PDF name:", pdf_name, flush=True)
-        print("Use all chunks:", use_all_chunks, flush=True)
-
-        # Always reload chunks for each query
-        global document_chunks
-        try:
-            print("Loading document chunks for query")
-            # If specific PDF is requested, load only that PDF's chunks
-            if pdf_name:
-                print(f"Loading chunks for specific PDF: {pdf_name}")
-                document_chunks = load_embeddings_from_db(pdf_name)
-                print(f"Loaded {len(document_chunks)} chunks for PDF: {pdf_name}")
-            # Otherwise load all chunks
-            else:
-                print("Loading all chunks from database")
-                document_chunks = load_embeddings_from_db()
-                print(f"Loaded all {len(document_chunks)} chunks from database")
-
-            if not document_chunks:
-                print("WARNING: No document chunks were loaded")
-        except Exception as e:
-            print(f"Error loading chunks: {str(e)}")
-            # Continue with empty chunks if loading fails
-            document_chunks = []
-
-        # If we still have no document chunks, try loading all chunks as a fallback
-        if not document_chunks and pdf_name:
-            try:
-                print("No chunks found for specific PDF, trying to load all chunks as fallback")
-                document_chunks = load_embeddings_from_db()
-                print(f"Fallback: Loaded {len(document_chunks)} total chunks")
-            except Exception as e:
-                print(f"Fallback load error: {str(e)}")
-
-        # Get document context using embeddings
-        try:
-            print(user_input)
-            document_context = get_document_context(user_input)
-            print(f"Generated document context successfully: '{document_context[:100]}...'")
-        except Exception as e:
-            print(f"Error generating document context: {str(e)}")
-            document_context = "Unable to retrieve document context."
-
-        # Get conversation history (excluding the system message)
-        try:
-            chat_history = "\n".join(
-                [msg.content for msg in memory.chat_memory.messages if msg.__class__.__name__ != "SystemMessage"]
-            )
-            print("Retrieved chat history successfully")
-        except Exception as e:
-            print(f"Error retrieving chat history: {str(e)}")
-            chat_history = ""
-
-        # Format the prompt for the LLM
-        full_prompt = prompt_template.format(
-            system_prompt=system_prompt,
-            document_context=document_context,
-            chat_history=chat_history,
-            user_input=user_input
+    if not relevant_chunks:
+        document_context = "No relevant context found."
+    else:
+        document_context = "\n---\n".join(
+            f"[Page {chunk['metadata']['page']}]: {chunk['content']}"
+            for chunk in relevant_chunks
         )
-        print("Created full prompt successfully")
-        print(f"Document context length: {len(document_context)} characters")
-        print(f"Chat history length: {len(chat_history)} characters")
-        print(f"Full prompt length: {len(full_prompt)} characters")
 
-        # Get the response from the language model
-        try:
-            response = llm.invoke(full_prompt)
-            initial_answer = response.get("content", "") if isinstance(response, dict) else response.content
-            print("Generated initial answer successfully")
-        except Exception as e:
-            print(f"Error generating answer from LLM: {str(e)}")
-            return jsonify({"error": f"Failed to generate response: {str(e)}"}), 500
+    # Create prompt
+    full_prompt = prompt_template.format(
+        system_prompt=system_prompt,
+        document_context=document_context,
+        chat_history="\n".join(msg.content for msg in memory.chat_memory.messages if isinstance(msg, SystemMessage) is False),
+        user_input=user_input
+    )
 
-        # Run the safety check loop to potentially reprompt for a safer answer
-        try:
-            safe_answer = get_safe_answer(initial_answer)
-            print("Safety check completed successfully")
-        except Exception as e:
-            print(f"Error in safety check: {str(e)}")
-            safe_answer = initial_answer  # Use initial answer if safety check fails
+    response = llm.invoke(full_prompt)
+    answer_text = response.content.strip()
 
-        # Update conversation memory
-        memory.chat_memory.add_user_message(user_input)
-        memory.chat_memory.add_ai_message(safe_answer)
-        print("Bot:", safe_answer, flush=True)
-        print("--- QUERY COMPLETED ---\n")
-        return jsonify({"answer": safe_answer})
-    except Exception as e:
-        print(f"Unexpected error in query endpoint: {str(e)}")
-        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+    memory.chat_memory.add_user_message(user_input)
+    memory.chat_memory.add_ai_message(answer_text)
+
+    return jsonify({"answer": answer_text})
+
 
 @app.route("/load_pdf", methods=["POST"])
 def load_pdf():

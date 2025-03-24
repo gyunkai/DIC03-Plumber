@@ -33,11 +33,12 @@ export async function GET(
         // Return PDF file with appropriate headers
         return new NextResponse(pdfBuffer, {
             headers: {
-                "Content-Type": "application/pdf",
-                "Content-Disposition": `inline; filename="${fullKey.split('/').pop()}"`,
-                "Content-Length": pdfBuffer.length.toString(),
+              "Content-Type": "application/pdf",
+              "Content-Disposition": `inline; filename="${fullKey.split('/').pop()}"`,
+              "Content-Length": pdfBuffer.length.toString(),
+              "Cache-Control": "public, max-age=3600", // ✅ Cache for 1 hour (3600 seconds)
             },
-        });
+          });
     } catch (error) {
         console.error("Error fetching PDF:", error);
         return NextResponse.json(
