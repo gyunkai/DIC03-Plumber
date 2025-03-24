@@ -324,6 +324,52 @@ export default function ChatPage() {
     setQuizFeedback("");
   };
 
+  // 在页面组件中添加一个全局的消息监听器
+  useEffect(() => {
+    // 监听PDF.js查看器发来的页面变化事件
+    const handlePageChange = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PDF_PAGE_CHANGE') {
+        // Log page change event with detailed information (English)
+        console.log(`[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`);
+
+        // 发送当前页码信息到后端
+        if (selectedPdf) {
+          console.log(`[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`);
+
+          fetch('/api/current-page', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              pdfKey: selectedPdf,
+              currentPage: event.data.page,
+              totalPages: event.data.total
+            })
+          })
+            .then(response => {
+              // Log response status (English)
+              console.log(`[PDF Backend] Server responded with status: ${response.status} ${response.ok ? '(Success)' : '(Failed)'}`);
+              return response.json();
+            })
+            .then(data => {
+              // Log response data (English)
+              console.log('[PDF Backend] Response data:', data);
+            })
+            .catch(error => {
+              console.error('[PDF Backend] Error sending page info to backend:', error);
+            });
+        }
+      }
+    };
+
+    window.addEventListener('message', handlePageChange);
+
+    return () => {
+      window.removeEventListener('message', handlePageChange);
+    };
+  }, [selectedPdf]);
+
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* HEADER */}
@@ -365,18 +411,16 @@ export default function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <div
-          className={`bg-gray-50 transition-all duration-300 ${
-            isSidebarOpen ? "w-64" : "w-0"
-          } overflow-hidden`}
+          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
+            } overflow-hidden`}
         >
           <div className="p-4">
             <h2 className="text-lg font-bold mb-4">Current Courses</h2>
             <ul className="mb-6">
               <li
                 onClick={() => handleCourseSelect("machine-learning")}
-                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                  selectedCourse === "machine-learning" ? "bg-blue-100" : ""
-                } flex items-center justify-between`}
+                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === "machine-learning" ? "bg-blue-100" : ""
+                  } flex items-center justify-between`}
               >
                 <span>Machine Learning</span>
                 <BookOpen className="h-4 w-4 text-gray-500" />
@@ -388,9 +432,8 @@ export default function ChatPage() {
                 <li
                   key={index}
                   onClick={() => handleCourseSelect(course.id)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                    selectedCourse === course.id ? "bg-blue-100" : ""
-                  } flex items-center justify-between`}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
+                    } flex items-center justify-between`}
                 >
                   <span>{course.name}</span>
                   <BookOpen className="h-4 w-4 text-gray-500" />
@@ -403,9 +446,8 @@ export default function ChatPage() {
                 <li
                   key={index}
                   onClick={() => setSelectedPdf(pdf.key)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                    selectedPdf === pdf.key ? "bg-blue-100" : ""
-                  } flex items-center`}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedPdf === pdf.key ? "bg-blue-100" : ""
+                    } flex items-center`}
                 >
                   <FileText className="h-4 w-4 mr-2 text-gray-500" />
                   {pdf.name}
@@ -439,24 +481,50 @@ export default function ChatPage() {
                   <p className="ml-3">Loading PDF...</p>
                 </div>
               ) : selectedPdf && pdfUrl ? (
-                <iframe
-                  src={pdfUrl}
-                  className="w-full h-full border-0"
-                  title="PDF Viewer"
-                  onLoad={() => console.log("PDF loaded successfully")}
-                />
-              ) : selectedPdf ? (
-                <iframe
-                  src={getPdfUrl(selectedPdf)}
-                  className="w-full h-full border-0"
-                  title="PDF Viewer"
-                  onLoad={() =>
-                    console.log("PDF loaded successfully (fallback)")
-                  }
-                />
+                <div className="w-full h-full flex flex-col">
+                  <div className="bg-gray-100 p-2 flex items-center justify-between">
+                    <span className="text-sm">PDF: {selectedPdf}</span>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden">
+                    {/* PDF viewer using PDF.js with proxy to avoid CORS issues */}
+                    <iframe
+                      src={(() => {
+                        if (!pdfUrl) return '';
+                        // Use our proxy to access the PDF from the same origin
+                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`;
+                        // Add parameters to support communication and disable same-origin restrictions
+                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(proxyUrl)}&disableXfa=true&embedded=true`;
+                      })()}
+                      className="w-full h-full border-0"
+                      name="pdfjs-viewer"
+                      id="pdfjs-iframe"
+                      onLoad={() => {
+                        console.log("PDF.js viewer loaded");
+                        setPdfLoading(false);
+
+                        // Load the page listener script after iframe is loaded
+                        const script = document.createElement('script');
+                        script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`; // Add timestamp to prevent caching
+                        document.body.appendChild(script);
+
+                        // Clean up on unmount
+                        return () => {
+                          try {
+                            if (script && script.parentNode) {
+                              script.parentNode.removeChild(script);
+                            }
+                          } catch (e) {
+                            console.error('Error removing script:', e);
+                          }
+                        };
+                      }}
+                    />
+                  </div>
+                </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
-                  <p>No PDF files available</p>
+                  <p>No PDF selected</p>
                 </div>
               )}
             </div>
@@ -503,11 +571,10 @@ export default function ChatPage() {
                       {messages.map((message, index) => (
                         <div
                           key={message.id || index}
-                          className={`mb-3 p-3 rounded max-w-[90%] ${
-                            message.sender === "user"
-                              ? "bg-blue-100 ml-auto"
-                              : "bg-gray-100 mr-auto"
-                          }`}
+                          className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
+                            ? "bg-blue-100 ml-auto"
+                            : "bg-gray-100 mr-auto"
+                            }`}
                         >
                           <div className="prose prose-sm">
                             <ReactMarkdown
