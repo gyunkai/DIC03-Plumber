@@ -1,90 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateChatResponse } from "@/app/utils/openai";
-import prisma from "@/app/lib/prisma";
+import axios from 'axios';
 
-export async function POST(request: NextRequest) {
+// Define message type
+interface Message {
+    content: string;
+    sender: 'user' | 'bot';
+    timestamp?: Date;
+}
+
+// Define the Kiwi bot API URL (copy from chat/route.ts)
+const KIWI_BOT_URL = 'http://localhost:5000/query';
+
+export async function POST(req: NextRequest) {
     try {
-        // Get session cookie
-        const sessionCookie = request.cookies.get("session");
-
-        // If no session cookie, user is not authenticated
-        if (!sessionCookie) {
-            return NextResponse.json(
-                { error: "Not authenticated" },
-                { status: 401 }
-            );
-        }
-
-        // Parse session data
-        let sessionData;
-        try {
-            sessionData = JSON.parse(sessionCookie.value);
-        } catch (error) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // If no user ID in session, user is not authenticated
-        if (!sessionData.userId) {
-            return NextResponse.json(
-                { error: "Invalid session" },
-                { status: 401 }
-            );
-        }
-
-        // Get request body
-        const body = await request.json();
+        const body = await req.json();
         const { messages, pdfKey } = body;
 
-        if (!messages || !Array.isArray(messages)) {
-            return NextResponse.json(
-                { error: "Messages array is required" },
-                { status: 400 }
-            );
+        // Get the latest user message
+        const lastUserMessage = messages.filter((m: Message) => m.sender === 'user').pop();
+
+        if (!lastUserMessage) {
+            return NextResponse.json({
+                success: false,
+                error: "No user message found"
+            }, { status: 400 });
         }
 
-        // Format messages for OpenAI
-        const formattedMessages = messages.map(msg => ({
-            role: msg.sender === "user" ? "user" : "assistant",
-            content: msg.content
-        }));
+        // Extract just the filename from the path if it exists (copied from chat/route.ts)
+        let filename = pdfKey;
+        if (pdfKey && pdfKey.includes('/')) {
+            filename = pdfKey.split('/').pop();
+        } else if (pdfKey && pdfKey.includes('\\')) {
+            filename = pdfKey.split('\\').pop();
+        }
 
-        // Generate response from OpenAI
-        const responseText = await generateChatResponse(formattedMessages);
+        console.log(`Processing message: "${lastUserMessage.content}"`);
+        console.log(`Using PDF: ${filename}`);
 
-        // Create a response message
-        const responseMessage = {
-            content: responseText,
-            sender: "bot",
-            timestamp: new Date(),
-        };
-
-        // Save the message to the database
         try {
-            await prisma.chatMessage.create({
-                data: {
-                    content: responseText,
-                    sender: "bot",
-                    userId: sessionData.userId,
-                    pdfKey,
-                },
+            // Directly forward user message to kiwi bot (skip the intermediate /api/chat call)
+            const response = await axios.post(KIWI_BOT_URL, {
+                query: lastUserMessage.content,
+                pdf_name: filename,
+                use_all_chunks: true  // Always use all available chunks
             });
-        } catch (dbError) {
-            console.error("Error saving bot message to database:", dbError);
-            // Continue even if database save fails
-        }
 
-        return NextResponse.json({
-            success: true,
-            message: responseMessage,
-        });
+            console.log("Received response from Kiwi Bot");
+
+            // Format response to match the expected format for this endpoint
+            return NextResponse.json({
+                success: true,
+                message: {
+                    content: response.data.answer,
+                    sender: "bot"
+                }
+            });
+        } catch (kiwiBotError) {
+            console.error("Error connecting to Kiwi Bot:", kiwiBotError.message);
+
+            // Return a more specific error message
+            return NextResponse.json({
+                success: false,
+                message: {
+                    content: "Sorry, I couldn't connect to the Kiwi Bot backend. Please make sure it's running at http://localhost:5000.",
+                    sender: "bot"
+                }
+            });
+        }
     } catch (error) {
-        console.error("Error generating chat completion:", error);
-        return NextResponse.json(
-            { error: "Failed to generate chat completion" },
-            { status: 500 }
-        );
+        console.error("Error processing completion:", error);
+        return NextResponse.json({
+            success: false,
+            error: "Failed to process completion request"
+        }, { status: 500 });
     }
-} 
+}

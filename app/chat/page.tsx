@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, ChevronLeft, ChevronRight, LogOut, User, FileText, BookOpen } from "lucide-react";
+
+import {
+  Send,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  User,
+  FileText,
+  BookOpen,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -41,19 +50,21 @@ export default function ChatPage() {
   const [userLoading, setUserLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [selectedCourse, setSelectedCourse] = useState<string | null>("machine-learning");
+
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(
+    "machine-learning"
+  );
 
   // ── NEW: Quiz Mode States ─────────────────────────
-  // isQuizMode toggles between chat and quiz interfaces.
+  // These states control the quiz mode functionality.
   const [isQuizMode, setIsQuizMode] = useState(false);
-  // Dummy quiz question and answer options.
   const [quizQuestion] = useState("What is the capital of France?");
   const [quizOptions] = useState(["Paris", "Berlin", "Rome", "Madrid"]);
-  // quizFeedback stores the message (Correct/Incorrect) after clicking an option.
   const [quizFeedback, setQuizFeedback] = useState("");
-  // Constant that holds the correct answer.
-  const correctAnswer = "Paris";
-  // ── End NEW: Quiz Mode States ─────────────────────────
+  const QuizAnswer = "Paris";
+  const correctAnswer = QuizAnswer;
+  const explanation = "Paris is the capital and largest city of France.";
+  // ── End NEW: Quiz Mode States ───────────────────────
 
   const courses = [
     {
@@ -63,47 +74,48 @@ export default function ChatPage() {
         name: `ML Lecture ${i + 1}`,
         key: `mlpdf/lecture${i + 1}.pdf`
       }))
+
     },
     {
       id: "linear-algebra",
       name: "Linear Algebra",
       lectures: Array.from({ length: 28 }, (_, i) => ({
         name: `LA Lecture ${i + 1}`,
-        key: `lapdf/Lecture ${i + 1}.pdf`
-      }))
+
+        key: `lapdf/Lecture ${i + 1}.pdf`,
+      })),
     },
     {
       id: "probability",
       name: "Probability and Statistics",
       lectures: Array.from({ length: 27 }, (_, i) => ({
-        name: `Prob Lecture ${String(i + 1).padStart(2, '0')}`,
-        key: `pbpdf/Lecture ${String(i + 1).padStart(2, '0')}.pdf`
-      }))
+
+        name: `Prob Lecture ${String(i + 1).padStart(2, "0")}`,
+        key: `pbpdf/Lecture ${String(i + 1).padStart(2, "0")}.pdf`,
+      })),
     },
     {
       id: "calculus",
       name: "Multivariable Calculus",
       lectures: Array.from({ length: 27 }, (_, i) => ({
         name: `Calculus Lecture ${i + 1}`,
-        key: `mulpdf/lecture ${i + 1}.pdf`
-      }))
-    }
+
+        key: `mulpdf/lecture ${i + 1}.pdf`,
+      })),
+    },
   ];
 
-
   useEffect(() => {
-    // 自动选择ML第一课
+    // Auto-select first lecture of machine-learning course.
     if (courses.length > 0 && courses[0].lectures.length > 0) {
       setSelectedCourse("machine-learning");
       setSelectedPdf(courses[0].lectures[0].key);
-
-      // 立即获取PDF URL
       (async () => {
         try {
           setPdfLoading(true);
-          // 获取预签名URL
-          const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(courses[0].lectures[0].key)}`);
-
+          const response = await fetch(
+            `/api/pdf-url?key=${encodeURIComponent(courses[0].lectures[0].key)}`
+          );
           if (response.ok) {
             const data = await response.json();
             if (data.success && data.url) {
@@ -117,23 +129,25 @@ export default function ChatPage() {
         }
       })();
     }
-  }, []);  // 只在组件挂载时运行一次
+
+  }, []);
 
   const getCourseLectures = () => {
     if (!selectedCourse) return pdfFiles;
-    const course = courses.find(c => c.id === selectedCourse);
+    const course = courses.find((c) => c.id === selectedCourse);
     return course ? course.lectures : pdfFiles;
   };
 
   const handleCourseSelect = (courseId: string) => {
     setSelectedCourse(courseId);
-    const course = courses.find(c => c.id === courseId);
+
+    const course = courses.find((c) => c.id === courseId);
     if (course && course.lectures.length > 0) {
       setSelectedPdf(course.lectures[0].key);
     }
   };
 
-  // Scroll to bottom of messages
+  // Scroll to bottom when messages update.
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -142,7 +156,8 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  // Fetch user info
+
+  // Fetch user info from backend.
   useEffect(() => {
     async function fetchUserInfo() {
       try {
@@ -163,7 +178,7 @@ export default function ChatPage() {
     fetchUserInfo();
   }, [router]);
 
-  // Get PDF files list
+  // Get PDF files list from backend.
   useEffect(() => {
     async function fetchPdfList() {
       try {
@@ -172,7 +187,6 @@ export default function ChatPage() {
         if (!response.ok) throw new Error("Failed to fetch PDF list");
         const data = await response.json();
         setPdfFiles(data.files);
-
 
       } catch (error) {
         console.error("Error fetching PDF list:", error);
@@ -183,7 +197,7 @@ export default function ChatPage() {
     fetchPdfList();
   }, []);
 
-  // Fetch PDF URL when selected PDF changes
+  // Fetch PDF URL when selected PDF changes.
   useEffect(() => {
     async function fetchPdfUrl() {
       if (!selectedPdf) return;
@@ -191,11 +205,10 @@ export default function ChatPage() {
         setPdfLoading(true);
         setPdfUrl(null);
 
-        // Get pre-signed URL for the PDF
-        const response = await fetch(`/api/pdf-url?key=${encodeURIComponent(selectedPdf)}`);
-
-        if (!response.ok) throw new Error('Failed to fetch PDF URL');
-
+        const response = await fetch(
+          `/api/pdf-url?key=${encodeURIComponent(selectedPdf)}`
+        );
+        if (!response.ok) throw new Error("Failed to fetch PDF URL");
         const data = await response.json();
         if (data.success && data.url) {
           setPdfUrl(data.url);
@@ -209,7 +222,7 @@ export default function ChatPage() {
     fetchPdfUrl();
   }, [selectedPdf]);
 
-  // Load chat messages when PDF changes
+  // Load chat messages when selected PDF changes.
   useEffect(() => {
     async function loadChatMessages() {
       if (!selectedPdf) return;
@@ -239,12 +252,10 @@ export default function ChatPage() {
     setInput("");
     setSendingMessage(true);
     try {
-      // Save user message to database
+
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: userMessage.content,
           sender: userMessage.sender,
@@ -254,12 +265,10 @@ export default function ChatPage() {
       if (!saveResponse.ok) {
         console.error("Failed to save user message");
       }
-      // Get bot response
+
       const completionResponse = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
           pdfName: selectedPdf,
@@ -292,7 +301,6 @@ export default function ChatPage() {
     }
   };
 
-  // Handle logout
   const handleLogout = async () => {
     try {
       const response = await fetch("/api/auth/logout", {
@@ -308,18 +316,18 @@ export default function ChatPage() {
     }
   };
 
-  // Generate PDF URL (fallback)
+
   const getPdfUrl = (key: string) => {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
   // ── NEW: Handle Quiz Answer Click ──
-  // This function compares the selected answer with the correct answer.
+  // This function checks if the selected answer is correct.
   const handleQuizAnswer = (selectedOption: string) => {
-    if (selectedOption === correctAnswer) {
+    if (selectedOption === QuizAnswer) {
       setQuizFeedback("Correct!");
     } else {
-      setQuizFeedback("Incorrect. Try again.");
+      setQuizFeedback(`Incorrect! The correct answer is ${QuizAnswer}. ${explanation}`);
     }
   };
 
@@ -330,24 +338,67 @@ export default function ChatPage() {
     setQuizFeedback("");
   };
 
+  // 在页面组件中添加一个全局的消息监听器
+  useEffect(() => {
+    // 监听PDF.js查看器发来的页面变化事件
+    const handlePageChange = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PDF_PAGE_CHANGE') {
+        // Log page change event with detailed information (English)
+        console.log(`[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`);
+
+        // 发送当前页码信息到后端
+        if (selectedPdf) {
+          console.log(`[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`);
+
+          fetch('/api/current-page', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              pdfKey: selectedPdf,
+              currentPage: event.data.page,
+              totalPages: event.data.total
+            })
+          })
+            .then(response => {
+              // Log response status (English)
+              console.log(`[PDF Backend] Server responded with status: ${response.status} ${response.ok ? '(Success)' : '(Failed)'}`);
+              return response.json();
+            })
+            .then(data => {
+              // Log response data (English)
+              console.log('[PDF Backend] Response data:', data);
+            })
+            .catch(error => {
+              console.error('[PDF Backend] Error sending page info to backend:', error);
+            });
+        }
+      }
+    };
+
+    window.addEventListener('message', handlePageChange);
+
+    return () => {
+      window.removeEventListener('message', handlePageChange);
+    };
+  }, [selectedPdf]);
+
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
+      {/* HEADER */}
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
-        {/* ── NEW: Upper Left Quiz Mode Toggle Button ──
-            Added here next to the title as an alternative control.
-            This button toggles quiz mode and its label updates accordingly. */}
-      <div className="flex items-center">
+        {/* ── NEW: Upper Left Quiz Mode Toggle Button ── */}
+        <div className="flex items-center">
           <button
             onClick={toggleQuizMode}
             className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
           >
             {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
           </button>
-          <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
         </div>
-
         <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
+        {/* User info and logout button */}
         {userLoading ? (
           <div className="flex items-center">
             <div className="animate-pulse bg-gray-200 h-8 w-24 rounded"></div>
@@ -372,7 +423,7 @@ export default function ChatPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+        {/* SIDEBAR */}
         <div
           className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
             } overflow-hidden`}
@@ -422,7 +473,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Main content area - now using flex row layout */}
+        {/* MAIN CONTENT AREA */}
         <div className="flex-1 flex flex-row overflow-hidden">
           {/* Sidebar toggle button */}
           <button
@@ -432,7 +483,7 @@ export default function ChatPage() {
             {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
           </button>
 
-          {/* PDF viewer - now takes 70% of the width */}
+          {/* PDF VIEWER (70% width) */}
           <div className="w-[70%] p-4 overflow-hidden flex flex-col">
             <h2 className="text-lg font-bold mb-2">PDF Viewer</h2>
             <div className="flex-1 h-[calc(100vh-200px)] relative">
@@ -446,87 +497,144 @@ export default function ChatPage() {
                   <p className="ml-3">Loading PDF...</p>
                 </div>
               ) : selectedPdf && pdfUrl ? (
-                <iframe
-                  src={pdfUrl}
-                  className="w-full h-full border-0"
-                  title="PDF Viewer"
-                  onLoad={() => console.log("PDF loaded successfully")}
-                />
-              ) : selectedPdf ? (
-                <iframe
-                  src={getPdfUrl(selectedPdf)}
-                  className="w-full h-full border-0"
-                  title="PDF Viewer"
-                  onLoad={() => console.log("PDF loaded successfully (fallback)")}
-                />
+                <div className="w-full h-full flex flex-col">
+                  <div className="bg-gray-100 p-2 flex items-center justify-between">
+                    <span className="text-sm">PDF: {selectedPdf}</span>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden">
+                    {/* PDF viewer using PDF.js with proxy to avoid CORS issues */}
+                    <iframe
+                      src={(() => {
+                        if (!pdfUrl) return '';
+                        // Use our proxy to access the PDF from the same origin
+                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`;
+                        // Add parameters to support communication and disable same-origin restrictions
+                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(proxyUrl)}&disableXfa=true&embedded=true`;
+                      })()}
+                      className="w-full h-full border-0"
+                      name="pdfjs-viewer"
+                      id="pdfjs-iframe"
+                      onLoad={() => {
+                        console.log("PDF.js viewer loaded");
+                        setPdfLoading(false);
+
+                        // Load the page listener script after iframe is loaded
+                        const script = document.createElement('script');
+                        script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`; // Add timestamp to prevent caching
+                        document.body.appendChild(script);
+
+                        // Clean up on unmount
+                        return () => {
+                          try {
+                            if (script && script.parentNode) {
+                              script.parentNode.removeChild(script);
+                            }
+                          } catch (e) {
+                            console.error('Error removing script:', e);
+                          }
+                        };
+                      }}
+                    />
+                  </div>
+                </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center">
-                  <p>No PDF files available</p>
+                  <p>No PDF selected</p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Chat Section (50% width) */}
+
+          {/* CHAT / QUIZ SECTION (50% width) */}
           <div className="w-1/2 border-l border-gray-200 flex flex-col">
+            {/* Chat header (removed duplicated quiz toggle here) */}
             <div className="p-4 border-b border-gray-200 bg-white shadow-sm">
               <h2 className="text-xl font-bold text-gray-800">Chat</h2>
             </div>
-            <div className="flex-1 p-4 overflow-y-auto bg-white">
-              {messages.length === 0 ? (
-                <div className="text-gray-500 text-center mt-4">
-                  No messages yet. Start a conversation!
-                </div>
-              ) : (
-                <>
-                  {messages.map((message, index) => (
-                    <div
-                      key={message.id || index}
-                      className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
-                        ? "bg-blue-100 ml-auto"
-                        : "bg-gray-100 mr-auto"
-                        }`}
+            {isQuizMode ? (
+              // NEW: Quiz Mode UI Block
+              <div className="flex-1 p-4 overflow-y-auto bg-white">
+                <h2 className="text-lg font-bold mb-2">Quiz Mode</h2>
+                <p className="mb-4">{quizQuestion}</p>
+                <div className="flex flex-col gap-2">
+                  {quizOptions.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleQuizAnswer(option)}
+                      className="p-3 rounded-lg bg-gray-100 hover:bg-blue-50 text-left"
                     >
-                      <div className="prose prose-sm">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkMath]}
-                          rehypePlugins={[rehypeKatex]}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
-                      </div>
-                    </div>
+                      {option}
+                    </button>
                   ))}
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </div>
-            <div className="p-4 border-t border-gray-200 bg-white">
-              <div className="flex">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) =>
-                    e.key === "Enter" && handleSendMessage()
-                  }
-                  placeholder="Type your question..."
-                  disabled={sendingMessage}
-                  className="flex-1 border border-gray-300 rounded-l-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={sendingMessage}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-r-md hover:bg-blue-600 disabled:bg-blue-300 flex items-center justify-center"
-                >
-                  {sendingMessage ? (
-                    <div className="w-5 h-5 border-t-2 border-white rounded-full animate-spin"></div>
-                  ) : (
-                    <Send size={20} />
-                  )}
-                </button>
+                </div>
+                {quizFeedback && (
+                  <div className="mt-4 p-3 rounded-lg bg-gray-100">
+                    {quizFeedback}
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              // Existing Chat UI Block
+              <>
+                <div className="flex-1 p-4 overflow-y-auto bg-white">
+                  {messages.length === 0 ? (
+                    <div className="text-gray-500 text-center mt-4">
+                      No messages yet. Start a conversation!
+                    </div>
+                  ) : (
+                    <>
+                      {messages.map((message, index) => (
+                        <div
+                          key={message.id || index}
+                          className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
+                            ? "bg-blue-100 ml-auto"
+                            : "bg-gray-100 mr-auto"
+                            }`}
+                        >
+                          <div className="prose prose-sm">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkMath]}
+                              rehypePlugins={[rehypeKatex]}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </>
+                  )}
+                </div>
+                <div className="p-4 border-t border-gray-200 bg-white">
+                  <div className="flex">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyPress={(e) =>
+                        e.key === "Enter" && handleSendMessage()
+                      }
+                      placeholder="Type your question..."
+                      disabled={sendingMessage}
+                      className="flex-1 border border-gray-300 rounded-l-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={sendingMessage}
+                      className="bg-blue-500 text-white px-4 py-2 rounded-r-md hover:bg-blue-600 disabled:bg-blue-300 flex items-center justify-center"
+                    >
+                      {sendingMessage ? (
+                        <div className="w-5 h-5 border-t-2 border-white rounded-full animate-spin"></div>
+                      ) : (
+                        <Send size={20} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
