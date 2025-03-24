@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+
 import {
   Send,
   ChevronLeft,
@@ -49,6 +50,7 @@ export default function ChatPage() {
   const [userLoading, setUserLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
   const [selectedCourse, setSelectedCourse] = useState<string | null>(
     "machine-learning"
   );
@@ -70,14 +72,16 @@ export default function ChatPage() {
       name: "Machine Learning",
       lectures: Array.from({ length: 48 }, (_, i) => ({
         name: `ML Lecture ${i + 1}`,
-        key: `mlpdf/lecture${i + 1}.pdf`,
-      })),
+        key: `mlpdf/lecture${i + 1}.pdf`
+      }))
+
     },
     {
       id: "linear-algebra",
       name: "Linear Algebra",
       lectures: Array.from({ length: 28 }, (_, i) => ({
         name: `LA Lecture ${i + 1}`,
+
         key: `lapdf/Lecture ${i + 1}.pdf`,
       })),
     },
@@ -85,6 +89,7 @@ export default function ChatPage() {
       id: "probability",
       name: "Probability and Statistics",
       lectures: Array.from({ length: 27 }, (_, i) => ({
+
         name: `Prob Lecture ${String(i + 1).padStart(2, "0")}`,
         key: `pbpdf/Lecture ${String(i + 1).padStart(2, "0")}.pdf`,
       })),
@@ -94,6 +99,7 @@ export default function ChatPage() {
       name: "Multivariable Calculus",
       lectures: Array.from({ length: 27 }, (_, i) => ({
         name: `Calculus Lecture ${i + 1}`,
+
         key: `mulpdf/lecture ${i + 1}.pdf`,
       })),
     },
@@ -123,6 +129,7 @@ export default function ChatPage() {
         }
       })();
     }
+
   }, []);
 
   const getCourseLectures = () => {
@@ -133,6 +140,7 @@ export default function ChatPage() {
 
   const handleCourseSelect = (courseId: string) => {
     setSelectedCourse(courseId);
+
     const course = courses.find((c) => c.id === courseId);
     if (course && course.lectures.length > 0) {
       setSelectedPdf(course.lectures[0].key);
@@ -147,6 +155,7 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
 
   // Fetch user info from backend.
   useEffect(() => {
@@ -178,6 +187,7 @@ export default function ChatPage() {
         if (!response.ok) throw new Error("Failed to fetch PDF list");
         const data = await response.json();
         setPdfFiles(data.files);
+
       } catch (error) {
         console.error("Error fetching PDF list:", error);
       } finally {
@@ -194,6 +204,7 @@ export default function ChatPage() {
       try {
         setPdfLoading(true);
         setPdfUrl(null);
+
         const response = await fetch(
           `/api/pdf-url?key=${encodeURIComponent(selectedPdf)}`
         );
@@ -241,6 +252,7 @@ export default function ChatPage() {
     setInput("");
     setSendingMessage(true);
     try {
+
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,6 +265,7 @@ export default function ChatPage() {
       if (!saveResponse.ok) {
         console.error("Failed to save user message");
       }
+
       const completionResponse = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -302,6 +315,7 @@ export default function ChatPage() {
       console.error("Error during logout:", error);
     }
   };
+
 
   const getPdfUrl = (key: string) => {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
@@ -426,6 +440,7 @@ export default function ChatPage() {
                 <BookOpen className="h-4 w-4 text-gray-500" />
               </li>
             </ul>
+
             <h2 className="text-lg font-bold mb-4">Prerequisite Courses</h2>
             <ul className="mb-6">
               {courses.slice(1).map((course, index) => (
@@ -440,6 +455,7 @@ export default function ChatPage() {
                 </li>
               ))}
             </ul>
+
             <h2 className="text-lg font-bold mb-2">PDF Files</h2>
             <ul className="overflow-y-auto max-h-[calc(100vh-350px)] pr-1">
               {(selectedCourse ? getCourseLectures() : pdfFiles).map((pdf, index) => (
@@ -529,6 +545,7 @@ export default function ChatPage() {
               )}
             </div>
           </div>
+
 
           {/* CHAT / QUIZ SECTION (50% width) */}
           <div className="w-1/2 border-l border-gray-200 flex flex-col">
