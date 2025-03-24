@@ -7,6 +7,8 @@ from langchain.prompts import PromptTemplate
 from langchain.schema import SystemMessage
 import numpy as np
 import json
+from psycopg2.extras import Json
+from datetime import datetime
 from typing import List, Dict
 import psycopg2
 from psycopg2.extras import Json
@@ -15,6 +17,8 @@ from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 import time
 import traceback
+import uuid
+
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -43,6 +47,7 @@ if not OPENAI_API_KEY:
 
 # Initialize embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+
 
 # Initialize database connection
 def get_db_connection():
@@ -90,6 +95,63 @@ def get_db_connection():
         except Exception as retry_e:
             print(f"ERROR: Failed retry connection: {str(retry_e)}")
             raise
+
+
+def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Check if session exists and is active
+            cursor.execute("""
+                SELECT id, "conversationhistory" FROM "UserSession"
+                WHERE "userId" = %s AND "sessionEndTime" IS NULL
+                ORDER BY "sessionStartTime" DESC
+                LIMIT 1
+            """, (user_id,))
+
+            session = cursor.fetchone()
+
+            message_entry_user = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "sender": "user",
+                "message": user_input
+            }
+            message_entry_bot = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "sender": "bot",
+                "message": bot_response
+            }
+
+            if session:
+                session_id, conversation_history = session
+                conversation_history.append(message_entry_user)
+                conversation_history.append(message_entry_bot)
+
+                cursor.execute("""
+                    UPDATE "UserSession"
+                    SET "conversationhistory" = %s
+                    WHERE id = %s
+                """, (Json(conversation_history), session_id))
+
+                print(f"Updated existing session {session_id}")
+
+            else:
+                # Create new session if none exists
+                session_id = str(uuid.uuid4())
+                conversation_history = [message_entry_user, message_entry_bot]
+
+                cursor.execute("""
+                    INSERT INTO "UserSession" (id, "userId", "pdfname", "conversationhistory", "sessionStartTime")
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (session_id, user_id, pdf_name, Json(conversation_history), datetime.utcnow()))
+
+                print(f"Created new session {session_id}")
+
+        conn.commit()
+    except Exception as e:
+        print(f"Error in session management: {e}")
+    finally:
+        conn.close()
 
 # Load embeddings from database
 def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
@@ -208,7 +270,26 @@ system_prompt = (
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
 )
-memory.chat_memory.messages.append(SystemMessage(content=system_prompt))
+
+user_memories = {}
+
+def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/A"):
+    if user_id not in user_memories:
+        user_memories[user_id] = {
+            "memory": ConversationBufferMemory(memory_key="chat_history", return_messages=True),
+            "personalized_prompt": (
+                f"{system_prompt}\n\n"
+                f"The user's name is {user_name}. "
+                f"The user's email address is {user_email}. "
+                f"The user's unique ID is {user_id}."
+            )
+        }
+        # Initialize memory with system prompt
+        user_memories[user_id]["memory"].chat_memory.messages.append(
+            SystemMessage(content=user_memories[user_id]["personalized_prompt"])
+        )
+
+    return user_memories[user_id]
 
 # Initialize Chat Model
 print("Initializing Chat Model...")
@@ -411,6 +492,16 @@ def query():
 
     user_input = data["query"]
     pdf_name = data.get("pdf_name")
+    user_id = data.get('user_id', 'anonymous')
+    user_name = data.get('user_name', 'User')
+    user_email = data.get('user_email', 'N/A')
+
+    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name}")
+
+    # Fetch user-specific memory and personalized prompt
+    user_data = get_user_memory(user_id, user_name, user_email)
+    memory = user_data["memory"]
+    personalized_prompt = user_data["personalized_prompt"]
 
     relevant_chunks = get_relevant_chunks(user_input, pdf_name, k=5)
 
@@ -422,11 +513,15 @@ def query():
             for chunk in relevant_chunks
         )
 
-    # Create prompt
+    chat_history_str = "\n".join(
+        msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
+    )
+
+    # Explicitly using personalized prompt here
     full_prompt = prompt_template.format(
-        system_prompt=system_prompt,
+        system_prompt=personalized_prompt,  # <-- Use the personalized prompt!
         document_context=document_context,
-        chat_history="\n".join(msg.content for msg in memory.chat_memory.messages if isinstance(msg, SystemMessage) is False),
+        chat_history=chat_history_str,
         user_input=user_input
     )
 
@@ -436,7 +531,11 @@ def query():
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(answer_text)
 
+    create_or_update_user_session(user_id, pdf_name, user_input, answer_text)
+
     return jsonify({"answer": answer_text})
+
+
 
 
 @app.route("/load_pdf", methods=["POST"])
