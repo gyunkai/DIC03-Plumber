@@ -4,27 +4,29 @@ import type { NextRequest } from 'next/server';
 // Define protected routes that require authentication
 const protectedRoutes = ['/profile', '/chat'];
 
+// This middleware runs before every request
 export function middleware(request: NextRequest) {
     // Get the path from the request
     const path = request.nextUrl.pathname;
 
     console.log('Middleware running for path:', path);
 
-    // Let Next.js config handle root path redirection, don't process it here
-    // if (path === '/') {
-    //     console.log('Redirecting from root to /begin');
-    //     return NextResponse.redirect(new URL('/begin', request.url));
-    // }
-
     // Check if the path is a protected route
     const isProtectedRoute = protectedRoutes.some(route =>
         path === route || path.startsWith(`${route}/`)
     );
 
-    // If it's not a protected route, allow the request to proceed
+    // Create a response
+    let response = NextResponse.next();
+
+    // Modify response headers to allow iframe embedding
+    response.headers.set('X-Frame-Options', 'SAMEORIGIN');
+    response.headers.set('Content-Security-Policy', "frame-ancestors 'self' *");
+
+    // If it's not a protected route, allow the request to proceed with modified headers
     if (!isProtectedRoute) {
         console.log('Not a protected route, allowing request to proceed');
-        return NextResponse.next();
+        return response;
     }
 
     // Only check session for protected routes
@@ -46,9 +48,9 @@ export function middleware(request: NextRequest) {
             return NextResponse.redirect(new URL('/login', request.url));
         }
 
-        // If everything is fine, allow the request to proceed
+        // If everything is fine, allow the request to proceed with modified headers
         console.log('Session valid, allowing request to proceed');
-        return NextResponse.next();
+        return response;
     } catch (error) {
         // If there's an error parsing the session, redirect to login
         console.log('Error parsing session, redirecting to login');
@@ -56,10 +58,9 @@ export function middleware(request: NextRequest) {
     }
 }
 
-// Configure the middleware to run on protected routes only
+// Configure the middleware to run on all routes except specific exclusions
 export const config = {
     matcher: [
-        '/profile/:path*',
-        '/chat/:path*'
+        '/((?!api/auth|_next/static|_next/image|favicon.ico).*)',
     ]
-}
+};

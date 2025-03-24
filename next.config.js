@@ -13,7 +13,7 @@ const nextConfig = {
 
     // Configure image domains if you're using next/image
     images: {
-        domains: ['plumbers3.s3.eu-north-1.amazonaws.com'],
+        domains: ['plumbers3.s3.eu-north-1.amazonaws.com', 'lh3.googleusercontent.com', 'avatars.githubusercontent.com'],
     },
 
     // Configure headers if needed
@@ -25,11 +25,15 @@ const nextConfig = {
                 headers: [
                     {
                         key: 'X-Frame-Options',
-                        value: 'DENY',
+                        value: 'SAMEORIGIN',
                     },
                     {
                         key: 'X-Content-Type-Options',
                         value: 'nosniff',
+                    },
+                    {
+                        key: 'Content-Security-Policy',
+                        value: "frame-ancestors 'self' *",
                     },
                 ],
             },
