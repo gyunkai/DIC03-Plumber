@@ -259,12 +259,12 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
 
 # Setup conversation memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
+course = "Machine Learning"
 # Define system prompt and add it to memory
 system_prompt = (
     "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
-    "Here you are tasked with answering questions based on the document provided which is for Introduction to Programming. "
+    "Here you are tasked with answering questions based on the document provided which is for Machine Learning. "
     "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
     "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links."
     "Always include these page references when providing information from the document. "

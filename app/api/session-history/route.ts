@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
       where: { userId: user_id },
       orderBy: { sessionStartTime: "desc" },
       select: {
+        id: true,
+        userId: true,
         pdfname: true,
         sessionStartTime: true,
         sessionEndTime: true,
