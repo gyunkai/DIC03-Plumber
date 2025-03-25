@@ -457,6 +457,7 @@ useEffect(() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
+          pdfUrl: pdfUrl,
           pdfName: selectedPdf,
           userId: user?.id,
           userName: user?.name,
