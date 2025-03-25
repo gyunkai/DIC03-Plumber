@@ -1,6 +1,6 @@
 This is our repo for the DIC, please add any info you want everyone to know here.
 
-# Plumber - Digital Interactive Companion
+# Plumber
 
 A smart learning assistant that helps students study lecture materials through conversation and interactive quizzes.
 
