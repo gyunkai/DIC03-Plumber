@@ -506,8 +506,9 @@ def get_safe_answer(initial_answer: str, max_attempts: int = 3) -> str:
 def generate_quiz_question(user_input, personalized_prompt, pdf_name, document_context):
     # Define quiz-specific instructions
     quiz_instructions = (
-        "You are Kiwi, a quiz master assistant. Based on the provided document context, generate a single multiple-choice quiz question. "
-        "Provide 4 options labeled A, B, C, D and indicate the correct answer. \n\n"
+        "You are Kiwi, a quiz master assistant. Based on the provided document context, generate a single multiple-choice quiz question. Generate new quizes to aid in learning and retention.\n\n"
+        "Don't give pointless factual questions like what is on X page, but rather questions that require understanding and reasoning.\n\n"
+        "Provide 4 options labeled A, B, C, D and indicate the correct answer.\n\n"
         "Return a valid JSON object in the following exact format:\n"
         "{\n"
         '  "question": "Your quiz question here?",\n'
@@ -516,21 +517,29 @@ def generate_quiz_question(user_input, personalized_prompt, pdf_name, document_c
         "}\n\n"
         "Return only the JSON and nothing else."
     )
-    
-    # If no document context is available, provide a fallback context.
+
+    # If no document context is available, provide a fallback.
     if not document_context or document_context.strip() == "":
         document_context = "No specific document context available. Please assume general Machine Learning topics."
 
-    # Combine the personalized prompt, quiz instructions, and document context.
+    # Append an explicit instruction so that Kiwi Bot does not ask for additional input.
+    appended_context = (
+        "IMPORTANT: Use ONLY the document context provided below to generate the quiz question. "
+        "Do not ask for further clarification or additional content."
+    )
+
+    # Combine the personalized prompt, quiz instructions, appended context, document context, and user input.
     final_prompt = (
         f"{personalized_prompt}\n\n"
         f"Quiz Mode Instructions:\n{quiz_instructions}\n\n"
+        f"{appended_context}\n\n"
         f"Document Context:\n{document_context}\n\n"
         f"User Input: {user_input}"
     )
-    
+
     print("Final quiz prompt for LLM:")
     print(final_prompt)
+    
     response = llm.invoke(final_prompt)
     answer_text = response.content.strip()
     return answer_text
