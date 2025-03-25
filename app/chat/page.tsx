@@ -126,6 +126,36 @@ export default function ChatPage() {
       console.error("Error fetching session history:", error);
     }
   };
+  // Load session messages
+  const handleLoadSessionMessages = async (sessionId: string) => {
+    console.log("\uD83D\uDD0D Selected session:", sessionId);
+  
+    try {
+      const response = await fetch(`/api/session/${sessionId}/messages`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch session messages");
+      }
+  
+      const data = await response.json();
+  
+      // Optional: Update UI with session metadata like pdf
+      if (data.metadata?.pdfname) {
+        setSelectedPdf(`mlpdf/${data.metadata.pdfname}`); // match your logic
+      }
+  
+      const formattedMessages = (data.messages || []).map((msg: any) => ({
+        sender: msg.sender,
+        content: msg.message,
+        timestamp: msg.timestamp ? new Date(msg.timestamp) : undefined,
+      }));
+  
+      setMessages(formattedMessages);
+      setShowHistoryModal(false);
+    } catch (error) {
+      console.error("Error loading session messages:", error);
+    }
+  };
+
   
   useEffect(() => {
     // Auto-select first lecture of machine-learning course.
@@ -297,6 +327,32 @@ useEffect(() => {
     }
     loadChatMessages();
   }, [selectedPdf]);
+
+  const handleNewSession = async () => {
+    if (!user || !selectedPdf) return;
+  
+    try {
+      const response = await fetch("/api/session/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          pdfName: selectedPdf.split("/").pop(), // just filename
+        }),
+      });
+  
+      if (response.ok) {
+        const data = await response.json();
+        setMessages([]); // reset UI
+        fetchSessionHistory(); // refresh session list
+      } else {
+        console.error("Failed to start new session");
+      }
+    } catch (err) {
+      console.error("Error creating new session:", err);
+    }
+  };
+  
 
   const handleSendMessage = async () => {
     if (input.trim() === "" || sendingMessage) return;
@@ -492,66 +548,87 @@ useEffect(() => {
           </div>
         )}
       </div>
-      {showHistoryModal && (
-            <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold">Session History</h2>
-                <button
-                  onClick={() => setShowHistoryModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="p-4 space-y-4">
-                {sessionHistory.length === 0 ? (
-                  <p className="text-gray-500">No session history available.</p>
-                ) : (
-                  sessionHistory.map((session, idx) => (
-                    <div
-                      key={idx}
-                      className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
-                    >
-                      <div className="text-sm mb-1">
-                        <strong>PDF:</strong> {session.pdfname}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        <strong>Started:</strong>{" "}
-                        {new Date(session.sessionStartTime).toLocaleString()}
-                      </div>
-                      {session.sessionEndTime && (
-                        <div className="text-xs text-gray-600">
-                          <strong>Ended:</strong>{" "}
-                          {new Date(session.sessionEndTime).toLocaleString()}
-                        </div>
-                      )}
+        
+      {/* SESSION HISTORY MODAL */}
+        {showHistoryModal && (
+        <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold">Session History</h2>
+            <button
+              onClick={() => setShowHistoryModal(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
 
-                      {/* Conversation Preview */}
-                      {Array.isArray(session.conversationhistory) &&
-                        session.conversationhistory.length > 0 && (
-                          <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
-                            <div className="mb-1 font-semibold text-gray-700">
-                              Conversation:
-                            </div>
-                            {session.conversationhistory.map((msg: any, i: number) => (
-                              <div key={i} className="mb-1">
-                                <strong className="capitalize">{msg.sender}:</strong>{" "}
-                                {msg.message}
-                                {msg.timestamp && (
-                                  <span className="ml-2 text-gray-400 text-[10px]">
-                                    ({new Date(msg.timestamp).toLocaleTimeString()})
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+    {/* New Session Button */}
+    <button
+      onClick={handleNewSession}
+      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 mb-4 ml-4"
+    >
+      Start New Session
+    </button>
+
+        <div className="p-4 space-y-4">
+          {sessionHistory.length === 0 ? (
+            <p className="text-gray-500">No session history available.</p>
+          ) : (
+            sessionHistory.map((session, idx) => {
+              // Debug log for each session object
+              console.log("🔍 Session object:", session);
+              return (
+                <div
+                  key={idx}
+                  // Ensure we're passing the correct field; if your schema uses "id", use that.
+                  onClick={() => {
+                    console.log("🧪 Selected session id:", session.id);
+                    handleLoadSessionMessages(session.id);
+                  }}
+                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                >
+                  <div className="text-sm mb-1">
+                    <strong>PDF:</strong> {session.pdfname}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    <strong>Started:</strong>{" "}
+                    {new Date(session.sessionStartTime).toLocaleString()}
+                  </div>
+                  {session.sessionEndTime && (
+                    <div className="text-xs text-gray-600">
+                      <strong>Ended:</strong>{" "}
+                      {new Date(session.sessionEndTime).toLocaleString()}
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
+                  )}
+                  {/* Conversation Preview */}
+                  {Array.isArray(session.conversationhistory) &&
+                    session.conversationhistory.length > 0 && (
+                      <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
+                        <div className="mb-1 font-semibold text-gray-700">
+                          Conversation:
+                        </div>
+                        {session.conversationhistory.map((msg: any, i: number) => (
+                          <div key={i} className="mb-1">
+                            <strong className="capitalize">{msg.sender}:</strong>{" "}
+                            {msg.message}
+                            {msg.timestamp && (
+                              <span className="ml-2 text-gray-400 text-[10px]">
+                                (
+                                {new Date(msg.timestamp).toLocaleTimeString()}
+                                )
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </div>
+              );
+            })
           )}
+        </div>
+      </div>
+)}
 
 
       <div className="flex flex-1 overflow-hidden">
