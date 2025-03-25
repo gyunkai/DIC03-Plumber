@@ -268,7 +268,7 @@ system_prompt = (
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
     "Here you are tasked with answering questions based on the document provided which is for the course which will be provided with. "
     "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
-    "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links."
+    "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links, start counting from 1."
     "The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided."
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
@@ -554,7 +554,7 @@ def query():
     data = request.get_json()
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request."}), 400
-
+    print(data)
     user_input = data["query"]
     pdf_name = data.get("pdf_name")
     quiz_mode = data.get("quiz_mode", False)
@@ -609,6 +609,7 @@ def query():
         )
         final_prompt = (
             f"{personalized_prompt}\n\n"
+            f"Pdf key: {pdf_url}\n\n"
             f"Document Context:\n{document_context}\n\n"
             f"Conversation History:\n{chat_history_str}\n\n"
             f"User: {user_input}\n"
