@@ -259,14 +259,14 @@ def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
 
 # Setup conversation memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-course = "Machine Learning"
 # Define system prompt and add it to memory
 system_prompt = (
     "You are Kiwi, a helpful AI assistant. Always remember personal details provided by the user, "
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
-    "Here you are tasked with answering questions based on the document provided which is for Machine Learning. "
+    "Here you are tasked with answering questions based on the document provided which is for the course which will be provided with. "
     "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
     "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links."
+    "The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided."
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
     "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
@@ -337,7 +337,7 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fall
                 if not rows and allow_fallback:
                     # Fallback: search across ALL PDFs
                     used_fallback = True
-                    print("⚠️ No matches in current PDF. Falling back to global search.")
+                    print(f"⚠️ No matches in {pdf_name}. Falling back to global search.")
                     sql = """
                     SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
                     FROM "PdfChunk"
@@ -369,6 +369,7 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fall
                         "distance": distance
                     }
                 })
+
     except Exception as e:
         print(f"Error in similarity search: {e}")
     finally:
@@ -441,7 +442,7 @@ def get_document_context(query: str) -> str:
         pdf_name = document_chunks[0].get('metadata', {}).get('pdf_name')
     
     # Get relevant chunks using similarity search
-    relevant_chunks = get_relevant_chunks(query, pdf_name)
+    relevant_chunks, used_fallback = get_relevant_chunks(query, pdf_name)
     print(f"Found {len(relevant_chunks)} relevant chunks for query")
     
     # Format relevant chunks with page information
@@ -551,15 +552,14 @@ def query():
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request."}), 400
 
-    # Extract common fields (using snake_case)
     user_input = data["query"]
     pdf_name = data.get("pdf_name")
     quiz_mode = data.get("quiz_mode", False)
     user_id = data.get("user_id", "anonymous")
     user_name = data.get("user_name", "User")
     user_email = data.get("user_email", "N/A")
-
-    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode}")
+    pdf_url = data.get("pdf_url")
+    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode} - URL: {pdf_url}")
 
     # Get user-specific memory and personalized prompt
     user_data = get_user_memory(user_id, user_name, user_email)
@@ -577,10 +577,24 @@ def query():
                 "**Note:** No relevant content found in the current lecture. "
                 "The following information comes from other lectures.\n\n"
             )
-        document_context = fallback_note + "\n---\n".join(
-            f"[Page {chunk['metadata']['page']}](page://{chunk['metadata']['page']}): {chunk['content']}"
-            for chunk in relevant_chunks
-        )
+        
+        # Format chunks with proper page references
+        formatted_chunks = []
+        for chunk in relevant_chunks:
+            page_number = chunk['metadata'].get('page', 'unknown')
+            pdf_source = chunk['metadata'].get('pdf_name', '')
+            content = chunk['content']
+            page_info = f"[Page {page_number}](page://{page_number})"
+            if used_fallback:
+                page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
+            formatted_chunks.append(f"{page_info}: {content}")
+        
+        document_context = fallback_note + "\n---\n".join(formatted_chunks)
+
+    # Get user-specific memory and personalized prompt
+    user_data = get_user_memory(user_id, user_name, user_email)
+    memory = user_data["memory"]
+    personalized_prompt = user_data["personalized_prompt"]
 
     # Build the final prompt based on quiz_mode flag
     if quiz_mode:
