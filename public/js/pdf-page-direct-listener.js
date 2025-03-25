@@ -3,9 +3,30 @@
  * A simplified approach to monitor PDF.js viewer page changes
  */
 
+
+// Check if this is the top window and PDFViewerApplication exists
+
+console.log("Current window location:", window.location.href);
+console.log("Is this the top window?", window === window.top);
+console.log("PDFViewerApplication exists?", !!window.PDFViewerApplication);
+console.log("[Direct Listener] window.location.href:", window.location.href);
+
 (function () {
     console.log('[Direct Listener] Script loaded at', new Date().toISOString());
-    // Listen for scroll-to-page messages from parent React app
+
+    // Wait for PDF.js to finish loading the document
+    document.addEventListener("documentloaded", () => {
+        // At this point, PDFViewerApplication should exist and be initialized
+        if (window.PDFViewerApplication) {
+        console.log("[Direct Listener] PDF is fully loaded!");
+        console.log("PDFViewerApplication:", window.PDFViewerApplication);
+        } else {
+        console.warn("[Direct Listener] PDFViewerApplication is still undefined!");
+        }
+  });
+
+        // Listen for scroll-to-page messages from parent React app
+
     window.addEventListener("message", (event) => {
         if (event.data && event.data.type === "PDF_SCROLL_TO_PAGE") {
         const pageNumber = event.data.page;
