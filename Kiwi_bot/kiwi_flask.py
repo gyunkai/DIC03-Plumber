@@ -49,6 +49,8 @@ if not OPENAI_API_KEY:
 # Initialize embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
+# Initialize global document chunks
+document_chunks = []
 
 # Initialize database connection
 def get_db_connection():
@@ -719,26 +721,47 @@ def generate_quiz():
         - quiz: List of quiz questions with options, correct answers, and explanations
     """
     try:
+        # Get and validate input data
         data = request.get_json()
-        if not data or "pdf_name" not in data:
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+            
+        if "pdf_name" not in data:
             return jsonify({"error": "Missing 'pdf_name' in request."}), 400
 
         pdf_name = data["pdf_name"]
         num_questions = int(data.get("num_questions", 1))
-        difficulty = data.get("difficulty", "medium")
+        difficulty = data.get("difficulty", "medium").lower()
         
-        print(f"Generating {num_questions} quiz questions for PDF: {pdf_name}, Difficulty: {difficulty}")
+        # Validate difficulty
+        if difficulty not in ["easy", "medium", "hard"]:
+            difficulty = "medium"
+        
+        print(f"Received quiz request - PDF: {pdf_name}, Questions: {num_questions}, Difficulty: {difficulty}")
         
         # Get document chunks
-        document_context = ""
-        
-        # Get document chunks
-        chunks = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
+        try:
+            chunks_result = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
             
-        if not chunks:
+            # Handle the tuple return value correctly
+            if isinstance(chunks_result, tuple):
+                chunks, used_fallback = chunks_result
+            else:
+                chunks = chunks_result
+                used_fallback = False
+                
+            if not chunks:
+                return jsonify({
+                    "error": f"No content found for PDF: {pdf_name}"
+                }), 404
+                
+            print(f"Found {len(chunks)} chunks of content for quiz generation")
+        except Exception as chunk_error:
+            print(f"Error getting document chunks: {str(chunk_error)}")
+            print(traceback.format_exc())
             return jsonify({
-                "error": "No content found for this PDF"
-            }), 404
+                "error": f"Error retrieving document content: {str(chunk_error)}"
+            }), 500
         
         # Compile document context
         document_context = "\n---\n".join(
@@ -777,18 +800,37 @@ Only generate questions specifically about the provided content. If the content 
 """
 
         # Generate quiz using the LLM
-        response = llm.invoke(quiz_prompt)
-        response_text = response.content.strip()
+        try:
+            print("Sending quiz generation prompt to LLM...")
+            response = llm.invoke(quiz_prompt)
+            response_text = response.content.strip()
+            print(f"Received response from LLM ({len(response_text)} characters)")
+        except Exception as llm_error:
+            print(f"Error invoking LLM: {str(llm_error)}")
+            print(traceback.format_exc())
+            return jsonify({
+                "error": f"AI model error: {str(llm_error)}"
+            }), 500
         
         # Extract JSON from the response (handle potential formatting issues)
-        json_match = re.search(r'\[[\s\S]*\]', response_text)
-        if json_match:
-            json_str = json_match.group(0)
-            quiz_data = json.loads(json_str)
-        else:
-            # Fallback if JSON extraction fails
+        try:
+            print("Parsing LLM response as JSON...")
+            json_match = re.search(r'\[[\s\S]*\]', response_text)
+            if json_match:
+                json_str = json_match.group(0)
+                quiz_data = json.loads(json_str)
+                print(f"Successfully parsed quiz data: {len(quiz_data)} questions")
+            else:
+                # Fallback if JSON extraction fails
+                print("Failed to extract JSON from response")
+                return jsonify({
+                    "error": "Failed to generate properly formatted quiz questions"
+                }), 500
+        except json.JSONDecodeError as json_error:
+            print(f"JSON parsing error: {str(json_error)}")
+            print(f"Response text: {response_text}")
             return jsonify({
-                "error": "Failed to generate properly formatted quiz questions"
+                "error": f"Error parsing generated quiz: {str(json_error)}"
             }), 500
         
         return jsonify({

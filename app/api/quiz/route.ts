@@ -24,11 +24,15 @@ export async function POST(req: NextRequest) {
         console.log(`Generating quiz for PDF: ${filename}, Questions: ${numberOfQuestions}, Difficulty: ${difficulty}`);
 
         // Forward quiz generation request to kiwi bot
-        const response = await axios.post(KIWI_BOT_URL, {
+        const requestBody = {
             pdf_name: filename,
             num_questions: numberOfQuestions,
             difficulty: difficulty
-        });
+        };
+        
+        console.log("Sending request to Kiwi bot:", JSON.stringify(requestBody));
+        
+        const response = await axios.post(KIWI_BOT_URL, requestBody);
 
         // Return quiz data
         return NextResponse.json({
@@ -36,8 +40,15 @@ export async function POST(req: NextRequest) {
             quiz: response.data.quiz
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error generating quiz:", error);
+        
+        // Enhanced error logging
+        if (error.response) {
+            console.error("Response error data:", error.response.data);
+            console.error("Response error status:", error.response.status);
+        }
+        
         return NextResponse.json({ 
             success: false,
             error: "Failed to generate quiz" 
