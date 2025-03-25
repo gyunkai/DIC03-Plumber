@@ -19,6 +19,7 @@ import time
 import traceback
 import uuid
 
+import re
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -705,6 +706,101 @@ def test():
         })
     except Exception as e:
         return jsonify({"error": f"Test error: {str(e)}"}), 500
+
+@app.route("/generate_quiz", methods=["POST"])
+def generate_quiz():
+    """
+    Generate quiz questions based on a PDF document
+    Accepts:
+        - pdf_name: Name of the PDF file
+        - num_questions: Number of questions to generate (default: 1)
+        - difficulty: Difficulty level of the questions (easy, medium, hard)
+    Returns:
+        - quiz: List of quiz questions with options, correct answers, and explanations
+    """
+    try:
+        data = request.get_json()
+        if not data or "pdf_name" not in data:
+            return jsonify({"error": "Missing 'pdf_name' in request."}), 400
+
+        pdf_name = data["pdf_name"]
+        num_questions = int(data.get("num_questions", 1))
+        difficulty = data.get("difficulty", "medium")
+        
+        print(f"Generating {num_questions} quiz questions for PDF: {pdf_name}, Difficulty: {difficulty}")
+        
+        # Get document chunks
+        document_context = ""
+        
+        # Get document chunks
+        chunks = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
+            
+        if not chunks:
+            return jsonify({
+                "error": "No content found for this PDF"
+            }), 404
+        
+        # Compile document context
+        document_context = "\n---\n".join(
+            f"[Page {chunk['metadata']['page']}]: {chunk['content']}"
+            for chunk in chunks
+        )
+        
+        # Create quiz generation prompt
+        quiz_prompt = f"""Based on the following content from a lecture, create {num_questions} {difficulty}-level multiple-choice quiz question(s).
+        
+CONTENT:
+{document_context}
+
+For each question:
+1. Create a clear, specific question about the content with {difficulty} difficulty
+2. Provide 4 options (labeled A, B, C, D)
+3. Indicate which option is correct
+4. Provide a concise explanation of why the correct answer is correct
+
+Difficulty Guidelines:
+- Easy: Basic recall of explicit facts from the text, straightforward questions with obvious answers
+- Medium: Understanding of concepts, requiring some analysis or connection between ideas
+- Hard: Application of concepts, requiring deeper understanding, analysis, and critical thinking
+
+Format your response as a valid JSON array with this structure:
+[
+  {{
+    "question": "Question text",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswer": "Option X",
+    "explanation": "Why this is correct"
+  }}
+]
+
+Only generate questions specifically about the provided content. If the content is insufficient, return fewer questions.
+"""
+
+        # Generate quiz using the LLM
+        response = llm.invoke(quiz_prompt)
+        response_text = response.content.strip()
+        
+        # Extract JSON from the response (handle potential formatting issues)
+        json_match = re.search(r'\[[\s\S]*\]', response_text)
+        if json_match:
+            json_str = json_match.group(0)
+            quiz_data = json.loads(json_str)
+        else:
+            # Fallback if JSON extraction fails
+            return jsonify({
+                "error": "Failed to generate properly formatted quiz questions"
+            }), 500
+        
+        return jsonify({
+            "quiz": quiz_data
+        })
+        
+    except Exception as e:
+        print(f"Error generating quiz: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            "error": f"Failed to generate quiz: {str(e)}"
+        }), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
