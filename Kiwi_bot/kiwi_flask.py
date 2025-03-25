@@ -266,9 +266,11 @@ system_prompt = (
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
     "Here you are tasked with answering questions based on the document provided which is for Introduction to Programming. "
     "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
-    "For each answer, you must cite your sources by referencing the page numbers in [Page X] format. "
+    "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links."
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
+    "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
+
 )
 
 user_memories = {}
@@ -309,17 +311,18 @@ prompt_template = PromptTemplate(
     )
 )
 
-def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Dict]:
+def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fallback: bool = True) -> List[Dict]:
     query_embedding = embeddings.embed_query(query)
     
     conn = get_db_connection()
     chunks = []
-    
+    used_fallback = False
+
     try:
         with conn.cursor() as cursor:
             cursor.execute("SET statement_timeout = 30000;")
-            
-            # Use pgvector similarity search
+
+            # First: try within the specified PDF
             if pdf_name:
                 sql = """
                 SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
@@ -329,7 +332,22 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, pdf_name, query_embedding, k))
+                rows = cursor.fetchall()
+
+                if not rows and allow_fallback:
+                    # Fallback: search across ALL PDFs
+                    used_fallback = True
+                    print("⚠️ No matches in current PDF. Falling back to global search.")
+                    sql = """
+                    SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+                    FROM "PdfChunk"
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s;
+                    """
+                    cursor.execute(sql, (query_embedding, query_embedding, k))
+                    rows = cursor.fetchall()
             else:
+                # Default to global search if no PDF name provided
                 sql = """
                 SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
                 FROM "PdfChunk"
@@ -337,8 +355,7 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, query_embedding, k))
-
-            rows = cursor.fetchall()
+                rows = cursor.fetchall()
 
             for row in rows:
                 id, content, page_number, pdf, distance = row
@@ -357,7 +374,8 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
     finally:
         conn.close()
 
-    return chunks
+    return chunks, used_fallback
+
 
 def get_fallback_chunks(pdf_name: str = None, k: int = 10) -> List[Dict]:
     """
@@ -429,10 +447,11 @@ def get_document_context(query: str) -> str:
     # Format relevant chunks with page information
     formatted_chunks = []
     for i, chunk in enumerate(relevant_chunks):
-        page_info = f"[Page {chunk['metadata'].get('page', 'unknown')}]"
-        content = chunk['content']
-        formatted_chunks.append(f"{page_info+1}: {content}")
-        print(f"Chunk {i}: Page {chunk['metadata'].get('page', 'unknown')}, Content length: {len(content)}")
+        page_number = chunk['metadata'].get('page', 'unknown')
+        content = chunk['content']  # ✅ Define content properly
+        page_info = f"[Page {page_number}]"
+        formatted_chunks.append(f"{page_info}: {content}")  # ✅ Use content properly
+        print(f"Chunk {i}: Page {page_number}, Content length: {len(content)}")
     
     result = "\n---\n".join(formatted_chunks)
     print(f"Total context length: {len(result)} characters")
@@ -503,13 +522,21 @@ def query():
     memory = user_data["memory"]
     personalized_prompt = user_data["personalized_prompt"]
 
-    relevant_chunks = get_relevant_chunks(user_input, pdf_name, k=5)
+    relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name, k=5)  
+
 
     if not relevant_chunks:
         document_context = "No relevant context found."
     else:
-        document_context = "\n---\n".join(
-            f"[Page {chunk['metadata']['page']}]: {chunk['content']}"
+        fallback_note = ""
+        if used_fallback:
+            fallback_note = (
+                "**Note:** No relevant content found in the current lecture. "
+                "The following information comes from other lectures.\n\n"
+            )
+
+        document_context = fallback_note + "\n---\n".join(
+            f"[Page {chunk['metadata']['page']}](page://{chunk['metadata']['page']}): {chunk['content']}"
             for chunk in relevant_chunks
         )
 
