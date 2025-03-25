@@ -115,26 +115,19 @@ export default function ChatPage() {
   const [sessionHistory, setSessionHistory] = useState<any[]>([]);
 
   const fetchSessionHistory = async () => {
-  if (!user?.id) return;
-  try {
-    const response = await fetch("/api/session-history", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ user_id: user.id })
-    });
-
-    if (!response.ok) {
-      console.error("Failed to fetch session history");
-      return;
+    if (!user?.id) return;
+    try {
+      const response = await fetch("/api/session-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id }),
+      });
+  
+      const data = await response.json();
+      setSessionHistory(data.sessions || []);
+    } catch (error) {
+      console.error("Error fetching session history:", error);
     }
-
-    const data = await response.json();
-    setSessionHistory(data.sessions || []);
-  } catch (error) {
-    console.error("Error fetching session history:", error);
-  }
   };
   
   useEffect(() => {
@@ -201,6 +194,8 @@ export default function ChatPage() {
         const data = await response.json();
         setUser(data.user);
         console.log("🔍 API /api/user/profile returned:", data);
+        console.log("🔍 API /api/user/profile returned:", user?.id);
+
         fetchSessionHistory(); // Fetch session history after user info
       } catch (error) {
         console.error("Error fetching user info:", error);
@@ -230,6 +225,33 @@ export default function ChatPage() {
     }
     fetchPdfList();
   }, []);
+
+  // FIRST: fetch and set the user (but don’t call fetchSessionHistory here)
+useEffect(() => {
+  async function fetchUserInfo() {
+    try {
+      const response = await fetch("/api/user/profile");
+      if (!response.ok) return router.push("/login");
+      const data = await response.json();
+      setUser(data.user); // just set user
+    } catch (err) {
+      console.error("Failed to fetch user info", err);
+      router.push("/login");
+    } finally {
+      setUserLoading(false);
+    }
+  }
+
+  fetchUserInfo();
+}, [router]);
+
+// SECOND: once user is loaded, trigger session history fetch
+useEffect(() => {
+  if (user?.id) {
+    console.log("📦 Fetching session history for user:", user.id);
+    fetchSessionHistory();
+  }
+}, [user]); // ⬅️ only runs when user is set
 
   // Fetch PDF URL when selected PDF changes.
   useEffect(() => {
@@ -474,42 +496,66 @@ export default function ChatPage() {
         )}
       </div>
       {showHistoryModal && (
-        <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold">Session History</h2>
-            <button
-              onClick={() => setShowHistoryModal(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="p-4 space-y-3">
-            {sessionHistory.length === 0 ? (
-              <p className="text-gray-500">No session history available.</p>
-            ) : (
-              sessionHistory.map((session, idx) => (
-                <div
-                  key={idx}
-                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+            <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold">Session History</h2>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  <div className="text-sm">
-                    <strong>PDF:</strong> {session.pdf_name}
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    <strong>Started:</strong> {new Date(session.session_start).toLocaleString()}
-                  </div>
-                  {session.session_end && (
-                    <div className="text-xs text-gray-600">
-                      <strong>Ended:</strong> {new Date(session.session_end).toLocaleString()}
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                {sessionHistory.length === 0 ? (
+                  <p className="text-gray-500">No session history available.</p>
+                ) : (
+                  sessionHistory.map((session, idx) => (
+                    <div
+                      key={idx}
+                      className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <div className="text-sm mb-1">
+                        <strong>PDF:</strong> {session.pdfname}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <strong>Started:</strong>{" "}
+                        {new Date(session.sessionStartTime).toLocaleString()}
+                      </div>
+                      {session.sessionEndTime && (
+                        <div className="text-xs text-gray-600">
+                          <strong>Ended:</strong>{" "}
+                          {new Date(session.sessionEndTime).toLocaleString()}
+                        </div>
+                      )}
+
+                      {/* Conversation Preview */}
+                      {Array.isArray(session.conversationhistory) &&
+                        session.conversationhistory.length > 0 && (
+                          <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
+                            <div className="mb-1 font-semibold text-gray-700">
+                              Conversation:
+                            </div>
+                            {session.conversationhistory.map((msg: any, i: number) => (
+                              <div key={i} className="mb-1">
+                                <strong className="capitalize">{msg.sender}:</strong>{" "}
+                                {msg.message}
+                                {msg.timestamp && (
+                                  <span className="ml-2 text-gray-400 text-[10px]">
+                                    ({new Date(msg.timestamp).toLocaleTimeString()})
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                     </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
 
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}

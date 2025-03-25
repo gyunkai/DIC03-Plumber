@@ -29,6 +29,9 @@ model UserSession {
   userId    String
   sessionStartTime DateTime @default(now())
   sessionEndTime   DateTime?
+  pdfname                String
+  conversationhistory    Json?
+  
   user      User     @relation(fields: [userId], references: [id])
   interactions    UserInteraction[]
   researchNotesForSession Json?
