@@ -12,9 +12,6 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import MarkdownWithPageLinks from "@/components/MarkdownWithPageLinks";
 type Message = {
   id?: string;
