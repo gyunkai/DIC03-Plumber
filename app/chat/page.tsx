@@ -58,12 +58,11 @@ export default function ChatPage() {
   // ── NEW: Quiz Mode States ─────────────────────────
   // These states control the quiz mode functionality.
   const [isQuizMode, setIsQuizMode] = useState(false);
-  const [quizQuestion] = useState("What is the capital of France?");
-  const [quizOptions] = useState(["Paris", "Berlin", "Rome", "Madrid"]);
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [quizFeedback, setQuizFeedback] = useState("");
-  const QuizAnswer = "Paris";
-  const correctAnswer = QuizAnswer;
-  const explanation = "Paris is the capital and largest city of France.";
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizError, setQuizError] = useState("");
   // ── End NEW: Quiz Mode States ───────────────────────
 
   const courses = [
@@ -72,9 +71,8 @@ export default function ChatPage() {
       name: "Machine Learning",
       lectures: Array.from({ length: 48 }, (_, i) => ({
         name: `ML Lecture ${i + 1}`,
-        key: `mlpdf/lecture${i + 1}.pdf`
-      }))
-
+        key: `mlpdf/lecture${i + 1}.pdf`,
+      })),
     },
     {
       id: "linear-algebra",
@@ -89,7 +87,6 @@ export default function ChatPage() {
       id: "probability",
       name: "Probability and Statistics",
       lectures: Array.from({ length: 27 }, (_, i) => ({
-
         name: `Prob Lecture ${String(i + 1).padStart(2, "0")}`,
         key: `pbpdf/Lecture ${String(i + 1).padStart(2, "0")}.pdf`,
       })),
@@ -129,7 +126,6 @@ export default function ChatPage() {
         }
       })();
     }
-
   }, []);
 
   const getCourseLectures = () => {
@@ -155,7 +151,6 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
 
   // Fetch user info from backend.
   useEffect(() => {
@@ -187,7 +182,6 @@ export default function ChatPage() {
         if (!response.ok) throw new Error("Failed to fetch PDF list");
         const data = await response.json();
         setPdfFiles(data.files);
-
       } catch (error) {
         console.error("Error fetching PDF list:", error);
       } finally {
@@ -252,7 +246,6 @@ export default function ChatPage() {
     setInput("");
     setSendingMessage(true);
     try {
-
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -316,7 +309,6 @@ export default function ChatPage() {
     }
   };
 
-
   const getPdfUrl = (key: string) => {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
@@ -324,63 +316,169 @@ export default function ChatPage() {
   // ── NEW: Handle Quiz Answer Click ──
   // This function checks if the selected answer is correct.
   const handleQuizAnswer = (selectedOption: string) => {
-    if (selectedOption === QuizAnswer) {
-      setQuizFeedback("Correct!");
+    if (!quizQuestions || quizQuestions.length === 0) return;
+
+    const currentQuestion = quizQuestions[currentQuestionIndex];
+    if (selectedOption === currentQuestion.correctAnswer) {
+      setQuizFeedback("Correct! " + currentQuestion.explanation);
     } else {
-      setQuizFeedback(`Incorrect! The correct answer is ${QuizAnswer}. ${explanation}`);
+      setQuizFeedback(
+        `Incorrect! The correct answer is ${currentQuestion.correctAnswer}. ${currentQuestion.explanation}`
+      );
     }
   };
 
   // ── NEW: Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
   const toggleQuizMode = () => {
-    setIsQuizMode((prev) => !prev);
+    const newQuizMode = !isQuizMode;
+    setIsQuizMode(newQuizMode);
     setQuizFeedback("");
+
+    // If turning on quiz mode, generate quiz questions
+    if (newQuizMode && selectedPdf) {
+      generateQuiz();
+    }
+  };
+
+  // ── NEW: Generate Quiz Function ──
+  // Calls the backend API to generate quiz questions.
+  const generateQuiz = async (pageNumber?: number) => {
+    if (!selectedPdf) return;
+
+    setGeneratingQuiz(true);
+    setQuizError("");
+
+    try {
+      const response = await fetch("/api/quiz", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pdfKey: selectedPdf,
+          numberOfQuestions: 3,
+          currentPage: pageNumber,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setQuizQuestions(data.quiz);
+        setCurrentQuestionIndex(0);
+        setQuizFeedback("");
+      } else {
+        setQuizError(data.error || "Failed to generate quiz questions");
+        console.error("Quiz generation error:", data.error);
+      }
+    } catch (error) {
+      console.error("Error generating quiz:", error);
+      setQuizError("Error connecting to quiz service");
+    } finally {
+      setGeneratingQuiz(false);
+    }
+  };
+
+  // ── NEW: Next Question Function ──
+  // Moves to the next question in the quiz.
+  const handleNextQuestion = () => {
+    if (currentQuestionIndex < quizQuestions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setQuizFeedback("");
+    }
+  };
+
+  // ── NEW: Previous Question Function ──
+  // Moves to the previous question in the quiz.
+  const handlePreviousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+      setQuizFeedback("");
+    }
+  };
+
+  // ── NEW: Generate Quiz Based on Current Page ──
+  // Generates quiz questions based on the current page being viewed.
+  const generateQuizFromCurrentPage = () => {
+    // Use the current page information from the PDF viewer
+    const pdfIframe = document.getElementById(
+      "pdfjs-iframe"
+    ) as HTMLIFrameElement;
+    if (pdfIframe && pdfIframe.contentWindow) {
+      // Send a message to the PDF.js iframe to request the current page
+      pdfIframe.contentWindow.postMessage({ type: "GET_CURRENT_PAGE" }, "*");
+
+      // Set up a one-time listener for the response
+      const pageListener = (event: MessageEvent) => {
+        if (event.data && event.data.type === "CURRENT_PAGE_RESPONSE") {
+          const currentPage = event.data.page;
+          generateQuiz(currentPage);
+          window.removeEventListener("message", pageListener);
+        }
+      };
+
+      window.addEventListener("message", pageListener);
+    } else {
+      // Fallback if iframe communication fails
+      generateQuiz();
+    }
   };
 
   // 在页面组件中添加一个全局的消息监听器
   useEffect(() => {
     // 监听PDF.js查看器发来的页面变化事件
     const handlePageChange = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'PDF_PAGE_CHANGE') {
+      if (event.data && event.data.type === "PDF_PAGE_CHANGE") {
         // Log page change event with detailed information (English)
-        console.log(`[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`);
+        console.log(
+          `[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`
+        );
 
         // 发送当前页码信息到后端
         if (selectedPdf) {
-          console.log(`[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`);
+          console.log(
+            `[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`
+          );
 
-          fetch('/api/current-page', {
-            method: 'POST',
+          fetch("/api/current-page", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json'
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({
               pdfKey: selectedPdf,
               currentPage: event.data.page,
-              totalPages: event.data.total
-            })
+              totalPages: event.data.total,
+            }),
           })
-            .then(response => {
+            .then((response) => {
               // Log response status (English)
-              console.log(`[PDF Backend] Server responded with status: ${response.status} ${response.ok ? '(Success)' : '(Failed)'}`);
+              console.log(
+                `[PDF Backend] Server responded with status: ${
+                  response.status
+                } ${response.ok ? "(Success)" : "(Failed)"}`
+              );
               return response.json();
             })
-            .then(data => {
+            .then((data) => {
               // Log response data (English)
-              console.log('[PDF Backend] Response data:', data);
+              console.log("[PDF Backend] Response data:", data);
             })
-            .catch(error => {
-              console.error('[PDF Backend] Error sending page info to backend:', error);
+            .catch((error) => {
+              console.error(
+                "[PDF Backend] Error sending page info to backend:",
+                error
+              );
             });
         }
       }
     };
 
-    window.addEventListener('message', handlePageChange);
+    window.addEventListener("message", handlePageChange);
 
     return () => {
-      window.removeEventListener('message', handlePageChange);
+      window.removeEventListener("message", handlePageChange);
     };
   }, [selectedPdf]);
 
@@ -425,16 +523,18 @@ export default function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <div
-          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
-            } overflow-hidden`}
+          className={`bg-gray-50 transition-all duration-300 ${
+            isSidebarOpen ? "w-64" : "w-0"
+          } overflow-hidden`}
         >
           <div className="p-4">
             <h2 className="text-lg font-bold mb-4">Current Courses</h2>
             <ul className="mb-6">
               <li
                 onClick={() => handleCourseSelect("machine-learning")}
-                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === "machine-learning" ? "bg-blue-100" : ""
-                  } flex items-center justify-between`}
+                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                  selectedCourse === "machine-learning" ? "bg-blue-100" : ""
+                } flex items-center justify-between`}
               >
                 <span>Machine Learning</span>
                 <BookOpen className="h-4 w-4 text-gray-500" />
@@ -447,8 +547,9 @@ export default function ChatPage() {
                 <li
                   key={index}
                   onClick={() => handleCourseSelect(course.id)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
-                    } flex items-center justify-between`}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                    selectedCourse === course.id ? "bg-blue-100" : ""
+                  } flex items-center justify-between`}
                 >
                   <span>{course.name}</span>
                   <BookOpen className="h-4 w-4 text-gray-500" />
@@ -458,17 +559,20 @@ export default function ChatPage() {
 
             <h2 className="text-lg font-bold mb-2">PDF Files</h2>
             <ul className="overflow-y-auto max-h-[calc(100vh-350px)] pr-1">
-              {(selectedCourse ? getCourseLectures() : pdfFiles).map((pdf, index) => (
-                <li
-                  key={index}
-                  onClick={() => setSelectedPdf(pdf.key)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedPdf === pdf.key ? "bg-blue-100" : ""
+              {(selectedCourse ? getCourseLectures() : pdfFiles).map(
+                (pdf, index) => (
+                  <li
+                    key={index}
+                    onClick={() => setSelectedPdf(pdf.key)}
+                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                      selectedPdf === pdf.key ? "bg-blue-100" : ""
                     } flex items-center`}
-                >
-                  <FileText className="h-4 w-4 mr-2 text-gray-500" />
-                  {pdf.name}
-                </li>
-              ))}
+                  >
+                    <FileText className="h-4 w-4 mr-2 text-gray-500" />
+                    {pdf.name}
+                  </li>
+                )
+              )}
             </ul>
           </div>
         </div>
@@ -506,11 +610,15 @@ export default function ChatPage() {
                     {/* PDF viewer using PDF.js with proxy to avoid CORS issues */}
                     <iframe
                       src={(() => {
-                        if (!pdfUrl) return '';
+                        if (!pdfUrl) return "";
                         // Use our proxy to access the PDF from the same origin
-                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`;
+                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(
+                          pdfUrl
+                        )}`;
                         // Add parameters to support communication and disable same-origin restrictions
-                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(proxyUrl)}&disableXfa=true&embedded=true`;
+                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(
+                          proxyUrl
+                        )}&disableXfa=true&embedded=true`;
                       })()}
                       className="w-full h-full border-0"
                       name="pdfjs-viewer"
@@ -520,9 +628,14 @@ export default function ChatPage() {
                         setPdfLoading(false);
 
                         // Load the page listener script after iframe is loaded
-                        const script = document.createElement('script');
+                        const script = document.createElement("script");
                         script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`; // Add timestamp to prevent caching
                         document.body.appendChild(script);
+
+                        // NEW: Load the quiz listener script
+                        const quizScript = document.createElement("script");
+                        quizScript.src = `/js/pdf-page-quiz-listener.js?t=${new Date().getTime()}`;
+                        document.body.appendChild(quizScript);
 
                         // Clean up on unmount
                         return () => {
@@ -530,8 +643,11 @@ export default function ChatPage() {
                             if (script && script.parentNode) {
                               script.parentNode.removeChild(script);
                             }
+                            if (quizScript && quizScript.parentNode) {
+                              quizScript.parentNode.removeChild(quizScript);
+                            }
                           } catch (e) {
-                            console.error('Error removing script:', e);
+                            console.error("Error removing scripts:", e);
                           }
                         };
                       }}
@@ -546,7 +662,6 @@ export default function ChatPage() {
             </div>
           </div>
 
-
           {/* CHAT / QUIZ SECTION (50% width) */}
           <div className="w-1/2 border-l border-gray-200 flex flex-col">
             {/* Chat header (removed duplicated quiz toggle here) */}
@@ -557,22 +672,117 @@ export default function ChatPage() {
               // NEW: Quiz Mode UI Block
               <div className="flex-1 p-4 overflow-y-auto bg-white">
                 <h2 className="text-lg font-bold mb-2">Quiz Mode</h2>
-                <p className="mb-4">{quizQuestion}</p>
-                <div className="flex flex-col gap-2">
-                  {quizOptions.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleQuizAnswer(option)}
-                      className="p-3 rounded-lg bg-gray-100 hover:bg-blue-50 text-left"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                {quizFeedback && (
-                  <div className="mt-4 p-3 rounded-lg bg-gray-100">
-                    {quizFeedback}
+
+                {generatingQuiz ? (
+                  <div className="flex flex-col items-center justify-center h-64">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                    <p>Generating quiz questions...</p>
                   </div>
+                ) : quizError ? (
+                  <div className="p-4 bg-red-100 text-red-700 rounded-md mb-4">
+                    <p>{quizError}</p>
+                    <button
+                      onClick={() => generateQuiz()}
+                      className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : quizQuestions.length === 0 ? (
+                  <div className="p-4 bg-yellow-100 rounded-md mb-4">
+                    <p>
+                      No quiz questions available. Generate questions first.
+                    </p>
+                    <div className="flex mt-4 space-x-2">
+                      <button
+                        onClick={() => generateQuiz()}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        Generate from Document
+                      </button>
+                      <button
+                        onClick={generateQuizFromCurrentPage}
+                        className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                      >
+                        Generate from Current Page
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4 flex justify-between items-center">
+                      <span className="text-sm text-gray-500">
+                        Question {currentQuestionIndex + 1} of{" "}
+                        {quizQuestions.length}
+                      </span>
+                      <div className="space-x-2">
+                        <button
+                          onClick={generateQuizFromCurrentPage}
+                          className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                        >
+                          New Quiz from Page
+                        </button>
+                        <button
+                          onClick={() => generateQuiz()}
+                          className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                        >
+                          New Quiz
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-blue-50 rounded-lg mb-4">
+                      <p className="font-medium text-lg mb-4">
+                        {quizQuestions[currentQuestionIndex]?.question}
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {quizQuestions[currentQuestionIndex]?.options.map(
+                          (option: string, idx: number) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleQuizAnswer(option)}
+                              className="p-3 rounded-lg bg-white hover:bg-blue-100 text-left border border-gray-200"
+                            >
+                              {option}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {quizFeedback && (
+                      <div className="mt-4 p-3 rounded-lg bg-gray-100 mb-4">
+                        {quizFeedback}
+                      </div>
+                    )}
+
+                    <div className="flex justify-between mt-4">
+                      <button
+                        onClick={handlePreviousQuestion}
+                        disabled={currentQuestionIndex === 0}
+                        className={`px-4 py-2 rounded ${
+                          currentQuestionIndex === 0
+                            ? "bg-gray-300 text-gray-500"
+                            : "bg-blue-500 text-white hover:bg-blue-600"
+                        }`}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={handleNextQuestion}
+                        disabled={
+                          currentQuestionIndex === quizQuestions.length - 1
+                        }
+                        className={`px-4 py-2 rounded ${
+                          currentQuestionIndex === quizQuestions.length - 1
+                            ? "bg-gray-300 text-gray-500"
+                            : "bg-blue-500 text-white hover:bg-blue-600"
+                        }`}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             ) : (
@@ -588,10 +798,11 @@ export default function ChatPage() {
                       {messages.map((message, index) => (
                         <div
                           key={message.id || index}
-                          className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
-                            ? "bg-blue-100 ml-auto"
-                            : "bg-gray-100 mr-auto"
-                            }`}
+                          className={`mb-3 p-3 rounded max-w-[90%] ${
+                            message.sender === "user"
+                              ? "bg-blue-100 ml-auto"
+                              : "bg-gray-100 mr-auto"
+                          }`}
                         >
                           <div className="prose prose-sm">
                             <ReactMarkdown

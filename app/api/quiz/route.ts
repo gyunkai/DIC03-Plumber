@@ -1,0 +1,46 @@
+import { NextRequest, NextResponse } from 'next/server';
+import axios from 'axios';
+
+// Define the Kiwi bot API URL
+const KIWI_BOT_URL = 'http://127.0.0.1:5000/generate_quiz';
+
+export async function POST(req: NextRequest) {
+    try {
+        const body = await req.json();
+        const { pdfKey, numberOfQuestions = 1, currentPage } = body;
+
+        if (!pdfKey) {
+            return NextResponse.json({ error: "PDF key is required" }, { status: 400 });
+        }
+
+        // Extract just the filename from the path if it exists
+        let filename = pdfKey;
+        if (pdfKey && pdfKey.includes('/')) {
+            filename = pdfKey.split('/').pop();
+        } else if (pdfKey && pdfKey.includes('\\')) {
+            filename = pdfKey.split('\\').pop();
+        }
+
+        console.log(`Generating quiz for PDF: ${filename}, Page: ${currentPage || 'all'}`);
+
+        // Forward quiz generation request to kiwi bot
+        const response = await axios.post(KIWI_BOT_URL, {
+            pdf_name: filename,
+            num_questions: numberOfQuestions,
+            page_number: currentPage || null
+        });
+
+        // Return quiz data
+        return NextResponse.json({
+            success: true,
+            quiz: response.data.quiz
+        });
+
+    } catch (error) {
+        console.error("Error generating quiz:", error);
+        return NextResponse.json({ 
+            success: false,
+            error: "Failed to generate quiz" 
+        }, { status: 500 });
+    }
+}
