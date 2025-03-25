@@ -503,28 +503,62 @@ def get_safe_answer(initial_answer: str, max_attempts: int = 3) -> str:
 
     return answer_text
 
+def generate_quiz_question(user_input, personalized_prompt, pdf_name, document_context):
+    # Define quiz-specific instructions
+    quiz_instructions = (
+        "You are Kiwi, a quiz master assistant. Based on the provided document context, generate a single multiple-choice quiz question. "
+        "Provide 4 options labeled A, B, C, D and indicate the correct answer. \n\n"
+        "Return a valid JSON object in the following exact format:\n"
+        "{\n"
+        '  "question": "Your quiz question here?",\n'
+        '  "options": ["A. Option 1", "B. Option 2", "C. Option 3", "D. Option 4"],\n'
+        '  "answer": "B"\n'
+        "}\n\n"
+        "Return only the JSON and nothing else."
+    )
+    
+    # If no document context is available, provide a fallback context.
+    if not document_context or document_context.strip() == "":
+        document_context = "No specific document context available. Please assume general Machine Learning topics."
+
+    # Combine the personalized prompt, quiz instructions, and document context.
+    final_prompt = (
+        f"{personalized_prompt}\n\n"
+        f"Quiz Mode Instructions:\n{quiz_instructions}\n\n"
+        f"Document Context:\n{document_context}\n\n"
+        f"User Input: {user_input}"
+    )
+    
+    print("Final quiz prompt for LLM:")
+    print(final_prompt)
+    response = llm.invoke(final_prompt)
+    answer_text = response.content.strip()
+    return answer_text
+
+
 @app.route("/query", methods=["POST"])
 def query():
     data = request.get_json()
     if not data or "query" not in data:
         return jsonify({"error": "Missing 'query' in request."}), 400
 
+    # Extract common fields (using snake_case)
     user_input = data["query"]
     pdf_name = data.get("pdf_name")
-    user_id = data.get('user_id', 'anonymous')
-    user_name = data.get('user_name', 'User')
-    user_email = data.get('user_email', 'N/A')
+    quiz_mode = data.get("quiz_mode", False)
+    user_id = data.get("user_id", "anonymous")
+    user_name = data.get("user_name", "User")
+    user_email = data.get("user_email", "N/A")
 
-    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name}")
+    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode}")
 
-    # Fetch user-specific memory and personalized prompt
+    # Get user-specific memory and personalized prompt
     user_data = get_user_memory(user_id, user_name, user_email)
     memory = user_data["memory"]
     personalized_prompt = user_data["personalized_prompt"]
 
-    relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name, k=5)  
-
-
+    # Compute document context regardless of quiz mode
+    relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
     if not relevant_chunks:
         document_context = "No relevant context found."
     else:
@@ -534,34 +568,38 @@ def query():
                 "**Note:** No relevant content found in the current lecture. "
                 "The following information comes from other lectures.\n\n"
             )
-
         document_context = fallback_note + "\n---\n".join(
             f"[Page {chunk['metadata']['page']}](page://{chunk['metadata']['page']}): {chunk['content']}"
             for chunk in relevant_chunks
         )
 
-    chat_history_str = "\n".join(
-        msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
-    )
+    # Build the final prompt based on quiz_mode flag
+    if quiz_mode:
+        # Use the quiz generation tool with context
+        answer_text = generate_quiz_question(user_input, personalized_prompt, pdf_name, document_context)
+    else:
+        chat_history_str = "\n".join(
+            msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
+        )
+        final_prompt = (
+            f"{personalized_prompt}\n\n"
+            f"Document Context:\n{document_context}\n\n"
+            f"Conversation History:\n{chat_history_str}\n\n"
+            f"User: {user_input}\n"
+            f"Assistant:"
+        )
+        response = llm.invoke(final_prompt)
+        answer_text = response.content.strip()
 
-    # Explicitly using personalized prompt here
-    full_prompt = prompt_template.format(
-        system_prompt=personalized_prompt,  # <-- Use the personalized prompt!
-        document_context=document_context,
-        chat_history=chat_history_str,
-        user_input=user_input
-    )
+    print("LLM Answer:")
+    print(answer_text)
 
-    response = llm.invoke(full_prompt)
-    answer_text = response.content.strip()
-
+    # Save the conversation into memory and update user session in DB
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(answer_text)
-
     create_or_update_user_session(user_id, pdf_name, user_input, answer_text)
 
     return jsonify({"answer": answer_text})
-
 
 
 
