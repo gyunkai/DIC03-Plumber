@@ -505,7 +505,7 @@ def generate_quiz():
     Accepts:
         - pdf_name: Name of the PDF file
         - num_questions: Number of questions to generate (default: 1)
-        - page_number: Specific page to generate questions from (optional)
+        - difficulty: Difficulty level of the questions (easy, medium, hard)
     Returns:
         - quiz: List of quiz questions with options, correct answers, and explanations
     """
@@ -516,43 +516,19 @@ def generate_quiz():
 
         pdf_name = data["pdf_name"]
         num_questions = int(data.get("num_questions", 1))
-        page_number = data.get("page_number")
+        difficulty = data.get("difficulty", "medium")
         
-        print(f"Generating {num_questions} quiz questions for PDF: {pdf_name}, Page: {page_number or 'all'}")
+        print(f"Generating {num_questions} quiz questions for PDF: {pdf_name}, Difficulty: {difficulty}")
         
         # Get document chunks
-        if page_number:
-            # Get chunks from specific page
-            chunks = get_relevant_chunks(f"Information from page {page_number}", pdf_name, k=10)
-            if not chunks:
-                # Fallback to loading chunks by page number
-                conn = get_db_connection()
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """SELECT id, content, "pageNumber" 
-                           FROM "PdfChunk" 
-                           WHERE "pdfName" = %s AND "pageNumber" = %s
-                           ORDER BY id LIMIT 10""", 
-                        (pdf_name, page_number)
-                    )
-                    rows = cursor.fetchall()
-                    chunks = [{
-                        "id": row[0],
-                        "content": row[1],
-                        "metadata": {
-                            "page": row[2],
-                            "pdf_name": pdf_name,
-                            "source": f"{pdf_name} - Page {row[2]}",
-                        }
-                    } for row in rows]
-                conn.close()
-        else:
-            # Get chunks from the whole document
-            chunks = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
+        document_context = ""
+        
+        # Get document chunks
+        chunks = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
             
         if not chunks:
             return jsonify({
-                "error": "No content found for this PDF or page"
+                "error": "No content found for this PDF"
             }), 404
         
         # Compile document context
@@ -562,16 +538,21 @@ def generate_quiz():
         )
         
         # Create quiz generation prompt
-        quiz_prompt = f"""Based on the following content from a lecture, create {num_questions} multiple-choice quiz question(s).
+        quiz_prompt = f"""Based on the following content from a lecture, create {num_questions} {difficulty}-level multiple-choice quiz question(s).
         
 CONTENT:
 {document_context}
 
 For each question:
-1. Create a clear, specific question about the content
+1. Create a clear, specific question about the content with {difficulty} difficulty
 2. Provide 4 options (labeled A, B, C, D)
 3. Indicate which option is correct
 4. Provide a concise explanation of why the correct answer is correct
+
+Difficulty Guidelines:
+- Easy: Basic recall of explicit facts from the text, straightforward questions with obvious answers
+- Medium: Understanding of concepts, requiring some analysis or connection between ideas
+- Hard: Application of concepts, requiring deeper understanding, analysis, and critical thinking
 
 Format your response as a valid JSON array with this structure:
 [

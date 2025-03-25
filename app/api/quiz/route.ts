@@ -7,7 +7,7 @@ const KIWI_BOT_URL = 'http://127.0.0.1:5000/generate_quiz';
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { pdfKey, numberOfQuestions = 1, currentPage } = body;
+        const { pdfKey, numberOfQuestions = 1, difficulty = 'medium' } = body;
 
         if (!pdfKey) {
             return NextResponse.json({ error: "PDF key is required" }, { status: 400 });
@@ -21,13 +21,13 @@ export async function POST(req: NextRequest) {
             filename = pdfKey.split('\\').pop();
         }
 
-        console.log(`Generating quiz for PDF: ${filename}, Page: ${currentPage || 'all'}`);
+        console.log(`Generating quiz for PDF: ${filename}, Questions: ${numberOfQuestions}, Difficulty: ${difficulty}`);
 
         // Forward quiz generation request to kiwi bot
         const response = await axios.post(KIWI_BOT_URL, {
             pdf_name: filename,
             num_questions: numberOfQuestions,
-            page_number: currentPage || null
+            difficulty: difficulty
         });
 
         // Return quiz data
