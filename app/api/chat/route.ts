@@ -8,10 +8,11 @@ const KIWI_BOT_URL = 'http://127.0.0.1:5000/query';
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { message, pdfName } = body;
+        const { message, pdfName, userId, userName, userEmail } = body;  // Extract user session data
 
         console.log(`Received message: ${message}`);
         console.log(`Original PDF Name: ${pdfName}`);
+        console.log(`User: ${userId}, ${userName}, ${userEmail}`);
 
         // Extract just the filename from the path if it exists
         let filename = pdfName;
@@ -27,14 +28,17 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Message content is required" }, { status: 400 });
         }
 
-        // Forward user message to kiwi bot
+        // Forward user message along with user info to Kiwi bot
         const response = await axios.post(KIWI_BOT_URL, {
             query: message,
             pdf_name: filename,
-            use_all_chunks: true  // Always use all available chunks
+            use_all_chunks: true,
+            user_id: userId,
+            user_name: userName,
+            user_email: userEmail
         });
 
-        // Return kiwi bot's response
+        // Return Kiwi bot's response
         return NextResponse.json({
             answer: response.data.answer
         });
@@ -43,4 +47,4 @@ export async function POST(req: NextRequest) {
         console.error("Error processing chat message:", error);
         return NextResponse.json({ error: "Failed to process message" }, { status: 500 });
     }
-} 
+}

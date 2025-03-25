@@ -1,6 +1,7 @@
 import os
 import boto3
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader  # <-- use this instead!
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import psycopg2
@@ -52,9 +53,13 @@ class PDFEmbeddingProcessor:
             return tmp_file.name
 
     def load_pdf(self, pdf_path: str):
-        loader = PyPDFLoader(pdf_path)
-        documents = loader.load()
-        return self.text_splitter.split_documents(documents)
+        try:
+            loader = PyMuPDFLoader(pdf_path)
+            documents = loader.load()
+            return self.text_splitter.split_documents(documents)
+        except Exception as e:
+            logging.error(f"Failed to load {pdf_path}: {e}")
+            return []  # Return empty list if loading fails
 
     def generate_embeddings(self, chunks):
         embeddings = []
@@ -71,6 +76,14 @@ class PDFEmbeddingProcessor:
     def store_in_database(self, chunks, pdf_name, pdf_path):
         for chunk in tqdm(chunks, desc=f"Storing '{pdf_name}'", leave=False):
             embedding = chunk["embedding"]
+            
+            # Sanitize content by removing NUL characters
+            sanitized_content = chunk["content"].replace('\x00', '')
+            
+            # Sanitize pdf_name and pdf_path just in case
+            sanitized_pdf_name = pdf_name.replace('\x00', '')
+            sanitized_pdf_path = pdf_path.replace('\x00', '')
+            
             self.cur.execute(
                 """
                 INSERT INTO "PdfChunk" 
@@ -79,14 +92,15 @@ class PDFEmbeddingProcessor:
                     (%s, gen_random_uuid(), %s, %s, %s, %s::vector)
                 """,
                 (
-                    pdf_path,
-                    pdf_name,
-                    chunk["content"],
+                    sanitized_pdf_path,
+                    sanitized_pdf_name,
+                    sanitized_content,
                     chunk["metadata"].get("page", 0),
                     embedding
                 )
             )
         self.conn.commit()
+
 
 
     def close(self):
@@ -112,8 +126,21 @@ def main():
             logging.warning("No PDFs found in bucket.")
             return
 
-        for s3_key in tqdm(pdf_keys, desc="Overall progress"):
-            logging.info(f"Processing '{s3_key}'...")
+        # Get already embedded PDFs from the database
+        processor.cur.execute('SELECT DISTINCT "pdfPath" FROM "PdfChunk";')
+        embedded_pdf_paths = {row[0] for row in processor.cur.fetchall()}
+
+        # Filter out already embedded PDFs
+        new_pdf_keys = [key for key in pdf_keys if key not in embedded_pdf_paths]
+
+        if not new_pdf_keys:
+            logging.info("All PDFs have already been embedded.")
+            return
+
+        logging.info(f"{len(new_pdf_keys)} new PDFs found to embed.")
+
+        for s3_key in tqdm(new_pdf_keys, desc="Overall progress"):
+            logging.info(f"Embedding '{s3_key}'...")
             
             # Fetch PDF locally for embedding
             pdf_local_path = processor.fetch_pdf_from_s3(bucket_name, s3_key)
@@ -121,11 +148,10 @@ def main():
             chunks = processor.load_pdf(pdf_local_path)
             chunks_with_embeddings = processor.generate_embeddings(chunks)
 
-            # Now explicitly store the original s3_key path
             processor.store_in_database(
                 chunks_with_embeddings, 
                 pdf_name=os.path.basename(s3_key),
-                pdf_path=s3_key  # <-- S3 path stored here directly
+                pdf_path=s3_key
             )
 
             # Clean up the downloaded PDF file
@@ -134,7 +160,7 @@ def main():
 
             time.sleep(1)  # To respect rate limits
 
-        logging.info("All PDFs processed and embeddings inserted successfully!")
+        logging.info("New PDFs processed and embeddings inserted successfully!")
 
     except Exception as e:
         logging.error(f"Error: {e}", exc_info=True)
