@@ -54,7 +54,7 @@ export default function ChatPage() {
   );
 
   // ── NEW: Quiz Mode States ─────────────────────────
-    // Quiz mode states (replace the hard-coded ones with dynamic ones)
+  // Quiz mode states (replace the hard-coded ones with dynamic ones)
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -74,76 +74,25 @@ export default function ChatPage() {
   // ── End NEW: Quiz Mode States ───────────────────────
 
   // ── NEW: Handle Quiz Answer Click ───────────────────
-  // Function to generate a quiz question via Kiwi Bot (backend builds the quiz prompt)
-      const handleGenerateQuizQuestion = async () => {
-        if (!user || !selectedPdf) {
-          console.warn("User info or PDF not loaded; cannot generate quiz.");
-          return;
-        }
+  // This function checks if the selected answer is correct.
+  const handleQuizAnswer = (selectedOption: string) => {
+    if (!quizQuestions || quizQuestions.length === 0) return;
 
-        try {
-          // Instead of building the prompt here, we simply send a quiz_mode flag
-          const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              // You can send a placeholder message if needed
-              message: "Generate a quiz question",
-              pdfName: selectedPdf,
-              quiz_mode: true, // Tell backend to use quiz mode prompt
-              userId: user.id,
-              userName: user.name,
-              userEmail: user.email,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error("Failed to generate quiz question");
-          }
-
-          const data = await response.json();
-          console.log("Quiz response data:", data);
-
-          const botAnswerRaw = data.answer; // The raw response including formatting
-          console.log("botAnswerRaw:", botAnswerRaw);
-
-          // Remove code block markers if present
-          const botAnswerClean = botAnswerRaw
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim();
-
-          console.log("botAnswerClean:", botAnswerClean);
-
-          let parsed;
-          try {
-            parsed = JSON.parse(botAnswerClean);
-          } catch (err) {
-            console.error("Quiz Bot response was not valid JSON after cleaning. Response:", botAnswerClean);
-            setQuizQuestion("Error: Could not parse quiz question.");
-            return;
-          }
-
-          // Update quiz states with the parsed data
-          setQuizQuestion(parsed.question || "No question provided");
-          setQuizOptions(parsed.options || []);
-          setCorrectAnswer(parsed.answer || "");
-          setQuizFeedback("");
-        } catch (error) {
-          console.error("Error generating quiz question:", error);
-        }
-      };
-
-      // Function to check the quiz answer
-      const handleQuizAnswer = (selectedOption: string) => {
-        // For options formatted as "A. Option text"
-        if (selectedOption.charAt(0).toUpperCase() === correctAnswer.toUpperCase()) {
-          setQuizFeedback("Correct!");
-        } else {
-          setQuizFeedback(`Incorrect! The correct answer is ${correctAnswer}.`);
-        }
-      };
-
+    const currentQuestion = quizQuestions[currentQuestionIndex];
+    if (selectedOption === currentQuestion.correctAnswer) {
+      setQuizFeedback({
+        isCorrect: true,
+        answer: currentQuestion.correctAnswer,
+        explanation: currentQuestion.explanation,
+      });
+    } else {
+      setQuizFeedback({
+        isCorrect: false,
+        answer: currentQuestion.correctAnswer,
+        explanation: currentQuestion.explanation,
+      });
+    }
+  };
 
   // ── NEW: Session History ─────────────────────────
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -185,8 +134,7 @@ export default function ChatPage() {
     },
   ];
 
-
-  // Fetch Chat history 
+  // Fetch Chat history
 
   const [sessionHistory, setSessionHistory] = useState<any[]>([]);
 
@@ -198,7 +146,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: user.id }),
       });
-  
+
       const data = await response.json();
       setSessionHistory(data.sessions || []);
     } catch (error) {
@@ -208,26 +156,26 @@ export default function ChatPage() {
   // Load session messages
   const handleLoadSessionMessages = async (sessionId: string) => {
     console.log("\uD83D\uDD0D Selected session:", sessionId);
-  
+
     try {
       const response = await fetch(`/api/session/${sessionId}/messages`);
       if (!response.ok) {
         throw new Error("Failed to fetch session messages");
       }
-  
+
       const data = await response.json();
-  
+
       // Optional: Update UI with session metadata like pdf
       if (data.metadata?.pdfname) {
         setSelectedPdf(`mlpdf/${data.metadata.pdfname}`); // match your logic
       }
-  
+
       const formattedMessages = (data.messages || []).map((msg: any) => ({
         sender: msg.sender,
         content: msg.message,
         timestamp: msg.timestamp ? new Date(msg.timestamp) : undefined,
       }));
-  
+
       setMessages(formattedMessages);
       setShowHistoryModal(false);
     } catch (error) {
@@ -235,7 +183,6 @@ export default function ChatPage() {
     }
   };
 
-  
   useEffect(() => {
     // Auto-select first lecture of machine-learning course.
     if (courses.length > 0 && courses[0].lectures.length > 0) {
@@ -303,7 +250,7 @@ export default function ChatPage() {
         fetchSessionHistory(); // Fetch session history after user info
       } catch (error) {
         console.error("Error fetching user info:", error);
-        router.push("/login");  
+        router.push("/login");
       } finally {
         setUserLoading(false);
       }
@@ -329,32 +276,32 @@ export default function ChatPage() {
     fetchPdfList();
   }, []);
 
-  // FIRST: fetch and set the user (but don’t call fetchSessionHistory here)
-useEffect(() => {
-  async function fetchUserInfo() {
-    try {
-      const response = await fetch("/api/user/profile");
-      if (!response.ok) return router.push("/login");
-      const data = await response.json();
-      setUser(data.user); // just set user
-    } catch (err) {
-      console.error("Failed to fetch user info", err);
-      router.push("/login");
-    } finally {
-      setUserLoading(false);
+  // FIRST: fetch and set the user (but don't call fetchSessionHistory here)
+  useEffect(() => {
+    async function fetchUserInfo() {
+      try {
+        const response = await fetch("/api/user/profile");
+        if (!response.ok) return router.push("/login");
+        const data = await response.json();
+        setUser(data.user); // just set user
+      } catch (err) {
+        console.error("Failed to fetch user info", err);
+        router.push("/login");
+      } finally {
+        setUserLoading(false);
+      }
     }
-  }
 
-  fetchUserInfo();
-}, [router]);
+    fetchUserInfo();
+  }, [router]);
 
-// SECOND: once user is loaded, trigger session history fetch
-useEffect(() => {
-  if (user?.id) {
-    console.log("📦 Fetching session history for user:", user.id);
-    fetchSessionHistory();
-  }
-}, [user]); // ⬅️ only runs when user is set
+  // SECOND: once user is loaded, trigger session history fetch
+  useEffect(() => {
+    if (user?.id) {
+      console.log("📦 Fetching session history for user:", user.id);
+      fetchSessionHistory();
+    }
+  }, [user]); // ⬅️ only runs when user is set
 
   // Fetch PDF URL when selected PDF changes.
   useEffect(() => {
@@ -406,7 +353,7 @@ useEffect(() => {
 
   const handleNewSession = async () => {
     if (!user || !selectedPdf) return;
-  
+
     try {
       const response = await fetch("/api/session/new", {
         method: "POST",
@@ -416,7 +363,7 @@ useEffect(() => {
           pdfName: selectedPdf.split("/").pop(), // just filename
         }),
       });
-  
+
       if (response.ok) {
         const data = await response.json();
         setMessages([]); // reset UI
@@ -428,7 +375,6 @@ useEffect(() => {
       console.error("Error creating new session:", err);
     }
   };
-  
 
   const handleSendMessage = async () => {
     if (input.trim() === "" || sendingMessage) return;
@@ -514,27 +460,6 @@ useEffect(() => {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
-  // ── NEW: Handle Quiz Answer Click ──
-  // This function checks if the selected answer is correct.
-  const handleQuizAnswer = (selectedOption: string) => {
-    if (!quizQuestions || quizQuestions.length === 0) return;
-
-    const currentQuestion = quizQuestions[currentQuestionIndex];
-    if (selectedOption === currentQuestion.correctAnswer) {
-      setQuizFeedback({
-        isCorrect: true,
-        answer: currentQuestion.correctAnswer,
-        explanation: currentQuestion.explanation,
-      });
-    } else {
-      setQuizFeedback({
-        isCorrect: false,
-        answer: currentQuestion.correctAnswer,
-        explanation: currentQuestion.explanation,
-      });
-    }
-  };
-
   // ── NEW: Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
   const toggleQuizMode = () => {
@@ -558,6 +483,10 @@ useEffect(() => {
     setQuizError("");
 
     try {
+      console.log(
+        `Generating quiz - PDF: ${selectedPdf}, Questions: ${quizNumQuestions}, Difficulty: ${quizDifficulty}`
+      );
+
       const response = await fetch("/api/quiz", {
         method: "POST",
         headers: {
@@ -571,8 +500,12 @@ useEffect(() => {
       });
 
       const data = await response.json();
+      console.log("Quiz API response:", data);
 
       if (response.ok && data.success) {
+        console.log(
+          `Successfully generated ${data.quiz.length} quiz questions`
+        );
         setQuizQuestions(data.quiz);
         setCurrentQuestionIndex(0);
         setQuizFeedback({});
@@ -585,6 +518,66 @@ useEffect(() => {
       setQuizError("Error connecting to quiz service");
     } finally {
       setGeneratingQuiz(false);
+    }
+  };
+
+  // ── Generate Single Quiz Question Function ──
+  // For handling single quiz question generation
+  const handleGenerateQuizQuestion = async () => {
+    if (!user || !selectedPdf) {
+      console.warn("User info or PDF not loaded; cannot generate quiz.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "Generate a quiz question",
+          pdfName: selectedPdf,
+          quiz_mode: true,
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate quiz question");
+      }
+
+      const data = await response.json();
+      const botAnswerRaw = data.answer;
+
+      // Remove code block markers if present
+      const botAnswerClean = botAnswerRaw
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      try {
+        const parsed = JSON.parse(botAnswerClean);
+        setQuizQuestions([
+          {
+            question: parsed.question || "No question provided",
+            options: parsed.options || [],
+            correctAnswer: parsed.answer || "",
+            explanation: parsed.explanation || "",
+          },
+        ]);
+        setCurrentQuestionIndex(0);
+        setQuizFeedback({});
+      } catch (err) {
+        console.error(
+          "Quiz Bot response was not valid JSON after cleaning. Response:",
+          botAnswerClean
+        );
+        setQuizError("Error: Could not parse quiz question.");
+      }
+    } catch (error) {
+      console.error("Error generating quiz question:", error);
+      setQuizError("Error generating quiz question");
     }
   };
 
@@ -612,7 +605,6 @@ useEffect(() => {
       console.log(`Page changed to: ${event.data.page}/${event.data.total}`);
     }
   };
-  
 
   // 在页面组件中添加一个全局的消息监听器
   useEffect(() => {
@@ -697,19 +689,18 @@ useEffect(() => {
               <span>Sign Out</span>
             </button>
             <button
-                onClick={() => setShowHistoryModal(true)}
-                className="flex items-center text-blue-600 hover:text-blue-800 mr-4"
-              >
-                <FileText className="h-5 w-5 mr-1" />
-                <span>History</span>
-              </button>
-
+              onClick={() => setShowHistoryModal(true)}
+              className="flex items-center text-blue-600 hover:text-blue-800 mr-4"
+            >
+              <FileText className="h-5 w-5 mr-1" />
+              <span>History</span>
+            </button>
           </div>
         )}
       </div>
-        
+
       {/* SESSION HISTORY MODAL */}
-        {showHistoryModal && (
+      {showHistoryModal && (
         <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold">Session History</h2>
@@ -721,74 +712,79 @@ useEffect(() => {
             </button>
           </div>
 
-    {/* New Session Button */}
-    <button
-      onClick={handleNewSession}
-      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 mb-4 ml-4"
-    >
-      Start New Session
-    </button>
+          {/* New Session Button */}
+          <button
+            onClick={handleNewSession}
+            className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 mb-4 ml-4"
+          >
+            Start New Session
+          </button>
 
-        <div className="p-4 space-y-4">
-          {sessionHistory.length === 0 ? (
-            <p className="text-gray-500">No session history available.</p>
-          ) : (
-            sessionHistory.map((session, idx) => {
-              // Debug log for each session object
-              console.log("🔍 Session object:", session);
-              return (
-                <div
-                  key={idx}
-                  // Ensure we're passing the correct field; if your schema uses "id", use that.
-                  onClick={() => {
-                    console.log("🧪 Selected session id:", session.id);
-                    handleLoadSessionMessages(session.id);
-                  }}
-                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
-                >
-                  <div className="text-sm mb-1">
-                    <strong>PDF:</strong> {session.pdfname}
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    <strong>Started:</strong>{" "}
-                    {new Date(session.sessionStartTime).toLocaleString()}
-                  </div>
-                  {session.sessionEndTime && (
-                    <div className="text-xs text-gray-600">
-                      <strong>Ended:</strong>{" "}
-                      {new Date(session.sessionEndTime).toLocaleString()}
+          <div className="p-4 space-y-4">
+            {sessionHistory.length === 0 ? (
+              <p className="text-gray-500">No session history available.</p>
+            ) : (
+              sessionHistory.map((session, idx) => {
+                // Debug log for each session object
+                console.log("🔍 Session object:", session);
+                return (
+                  <div
+                    key={idx}
+                    // Ensure we're passing the correct field; if your schema uses "id", use that.
+                    onClick={() => {
+                      console.log("🧪 Selected session id:", session.id);
+                      handleLoadSessionMessages(session.id);
+                    }}
+                    className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <div className="text-sm mb-1">
+                      <strong>PDF:</strong> {session.pdfname}
                     </div>
-                  )}
-                  {/* Conversation Preview */}
-                  {Array.isArray(session.conversationhistory) &&
-                    session.conversationhistory.length > 0 && (
-                      <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
-                        <div className="mb-1 font-semibold text-gray-700">
-                          Conversation:
-                        </div>
-                        {session.conversationhistory.map((msg: any, i: number) => (
-                          <div key={i} className="mb-1">
-                            <strong className="capitalize">{msg.sender}:</strong>{" "}
-                            {msg.message}
-                            {msg.timestamp && (
-                              <span className="ml-2 text-gray-400 text-[10px]">
-                                (
-                                {new Date(msg.timestamp).toLocaleTimeString()}
-                                )
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                    <div className="text-xs text-gray-600">
+                      <strong>Started:</strong>{" "}
+                      {new Date(session.sessionStartTime).toLocaleString()}
+                    </div>
+                    {session.sessionEndTime && (
+                      <div className="text-xs text-gray-600">
+                        <strong>Ended:</strong>{" "}
+                        {new Date(session.sessionEndTime).toLocaleString()}
                       </div>
                     )}
-                </div>
-              );
-            })
-          )}
+                    {/* Conversation Preview */}
+                    {Array.isArray(session.conversationhistory) &&
+                      session.conversationhistory.length > 0 && (
+                        <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
+                          <div className="mb-1 font-semibold text-gray-700">
+                            Conversation:
+                          </div>
+                          {session.conversationhistory.map(
+                            (msg: any, i: number) => (
+                              <div key={i} className="mb-1">
+                                <strong className="capitalize">
+                                  {msg.sender}:
+                                </strong>{" "}
+                                {msg.message}
+                                {msg.timestamp && (
+                                  <span className="ml-2 text-gray-400 text-[10px]">
+                                    (
+                                    {new Date(
+                                      msg.timestamp
+                                    ).toLocaleTimeString()}
+                                    )
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-      </div>
-)}
-
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
@@ -1065,8 +1061,8 @@ useEffect(() => {
                     <p>{quizError}</p>
                   </div>
                 ) : quizQuestions.length === 0 ? (
-                  <div className="mt-5 p-4 bg-yellow-50 border border-yellow-200 rounded-md text-center">
-                    <p className="text-yellow-800">
+                  <div className="p-4 bg-gray-50 rounded-md text-center">
+                    <p className="text-gray-500">
                       Configure your quiz settings and click "Generate Quiz" to
                       begin.
                     </p>
@@ -1162,19 +1158,9 @@ useEffect(() => {
                       </button>
                     </div>
                   </div>
-                  {quizFeedback && (
-                    <div className="mt-4 p-3 rounded-lg bg-gray-100">
-                      {quizFeedback}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-gray-500">
-                  Click "Generate Quiz Question" to start a quiz!
-                </p>
-              )}
-            </div>
-          ) : (
+                )}
+              </div>
+            ) : (
               // Existing Chat UI Block
               <>
                 <div className="flex-1 p-4 overflow-y-auto bg-white">
@@ -1194,7 +1180,7 @@ useEffect(() => {
                           }`}
                         >
                           <div className="prose prose-sm">
-                          <MarkdownWithPageLinks content={message.content} />
+                            <MarkdownWithPageLinks content={message.content} />
                           </div>
                         </div>
                       ))}
