@@ -1,48 +1,76 @@
-import { NextRequest, NextResponse } from 'next/server';
+// app/api/pdf-proxy/route.ts (for App Router in Next.js)
+import { NextRequest } from "next/server";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({
+  region: "eu-north-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
 
 export async function GET(request: NextRequest) {
-    // Get URL parameter
-    const url = request.nextUrl.searchParams.get('url');
+  const { searchParams } = new URL(request.url);
+  const urlParam = searchParams.get("url");
 
-    if (!url) {
-        return NextResponse.json({ error: 'URL parameter missing' }, { status: 400 });
+  if (!urlParam) {
+    return new Response(JSON.stringify({ error: "URL parameter missing" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  try {
+    const decodedUrl = decodeURIComponent(urlParam);
+
+    // Extract the S3 object key from the presigned URL
+    const match = decodedUrl.match(/public\/(.+\.pdf)/);
+    if (!match) {
+      return new Response(JSON.stringify({ error: "Invalid S3 key in URL" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    try {
-        // Decode URL (if encoded)
-        const decodedUrl = decodeURIComponent(url);
+    const key = `public/${match[1]}`;
 
-        // Fetch PDF content
-        const response = await fetch(decodedUrl);
+    const s3Res = await s3.send(
+      new GetObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME!,
+        Key: key,
+      })
+    );
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
-        }
+    const stream = s3Res.Body as ReadableStream;
 
-        // Get response buffer
-        const pdfBuffer = await response.arrayBuffer();
-
-        // Build new response with proper headers
-        return new NextResponse(pdfBuffer, {
-            status: 200,
-            headers: {
-                'Content-Type': 'application/pdf',
-                'Content-Length': pdfBuffer.byteLength.toString(),
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Cache-Control': 'max-age=300',
-                // Set X-Frame-Options to allow any origin
-                'X-Frame-Options': 'ALLOWALL',
-                // Allow embedding from any origin
-                'Content-Security-Policy': "default-src 'self' data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self' *"
-            }
-        });
-    } catch (error) {
-        console.error('PDF proxy error:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch PDF', details: (error as Error).message },
-            { status: 500 }
-        );
-    }
-} 
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${match[1]}"`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": s3Res.ContentLength?.toString() || "",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "X-Frame-Options": "ALLOWALL",
+        "Cache-Control": "max-age=600",
+        "Content-Security-Policy":
+          "default-src 'self' data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self' *",
+      },
+    });
+  } catch (error) {
+    console.error("PDF proxy streaming error:", error);
+    return new Response(
+      JSON.stringify({
+        error: "Failed to stream PDF",
+        details: (error as Error).message,
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+}

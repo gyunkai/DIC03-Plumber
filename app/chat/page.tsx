@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-
+import MarkdownWithPageLinks from "@/components/MarkdownWithPageLinks";
 type Message = {
   id?: string;
   content: string;
@@ -246,14 +246,13 @@ export default function ChatPage() {
   }, [selectedPdf]);
 
   const handleSendMessage = async () => {
-    if (input.trim() === "" || sendingMessage || !user) return; // Make sure user data is available
+    if (input.trim() === "" || sendingMessage) return;
     const userMessage: Message = { content: input, sender: "user" };
     setMessages([...messages, userMessage]);
     setInput("");
     setSendingMessage(true);
-  
     try {
-      // Save user message with session data
+
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,33 +260,23 @@ export default function ChatPage() {
           content: userMessage.content,
           sender: userMessage.sender,
           pdfKey: selectedPdf,
-          userId: user.id,             // session data
-          userName: user.name,         // session data
-          userEmail: user.email,       // optional session data
         }),
       });
-  
       if (!saveResponse.ok) {
         console.error("Failed to save user message");
       }
-  
-      // Fetch bot's response with session data
+
       const completionResponse = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
           pdfName: selectedPdf,
-          userId: user.id,             // session data
-          userName: user.name,         // session data
-          userEmail: user.email,       // optional session data
         }),
       });
-  
       if (!completionResponse.ok) {
         throw new Error("Failed to get bot response");
       }
-  
       const completionData = await completionResponse.json();
       if (completionData.answer) {
         const botMessage: Message = {
@@ -311,7 +300,6 @@ export default function ChatPage() {
       setSendingMessage(false);
     }
   };
-  
 
   const handleLogout = async () => {
     try {
@@ -606,12 +594,7 @@ export default function ChatPage() {
                             }`}
                         >
                           <div className="prose prose-sm">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkMath]}
-                              rehypePlugins={[rehypeKatex]}
-                            >
-                              {message.content}
-                            </ReactMarkdown>
+                          <MarkdownWithPageLinks content={message.content} />
                           </div>
                         </div>
                       ))}
