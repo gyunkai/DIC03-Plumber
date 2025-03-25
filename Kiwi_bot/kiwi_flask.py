@@ -15,6 +15,7 @@ from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 import time
 import traceback
+import re
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -496,6 +497,120 @@ def test():
         })
     except Exception as e:
         return jsonify({"error": f"Test error: {str(e)}"}), 500
+
+@app.route("/generate_quiz", methods=["POST"])
+def generate_quiz():
+    """
+    Generate quiz questions based on a PDF document
+    Accepts:
+        - pdf_name: Name of the PDF file
+        - num_questions: Number of questions to generate (default: 1)
+        - page_number: Specific page to generate questions from (optional)
+    Returns:
+        - quiz: List of quiz questions with options, correct answers, and explanations
+    """
+    try:
+        data = request.get_json()
+        if not data or "pdf_name" not in data:
+            return jsonify({"error": "Missing 'pdf_name' in request."}), 400
+
+        pdf_name = data["pdf_name"]
+        num_questions = int(data.get("num_questions", 1))
+        page_number = data.get("page_number")
+        
+        print(f"Generating {num_questions} quiz questions for PDF: {pdf_name}, Page: {page_number or 'all'}")
+        
+        # Get document chunks
+        if page_number:
+            # Get chunks from specific page
+            chunks = get_relevant_chunks(f"Information from page {page_number}", pdf_name, k=10)
+            if not chunks:
+                # Fallback to loading chunks by page number
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """SELECT id, content, "pageNumber" 
+                           FROM "PdfChunk" 
+                           WHERE "pdfName" = %s AND "pageNumber" = %s
+                           ORDER BY id LIMIT 10""", 
+                        (pdf_name, page_number)
+                    )
+                    rows = cursor.fetchall()
+                    chunks = [{
+                        "id": row[0],
+                        "content": row[1],
+                        "metadata": {
+                            "page": row[2],
+                            "pdf_name": pdf_name,
+                            "source": f"{pdf_name} - Page {row[2]}",
+                        }
+                    } for row in rows]
+                conn.close()
+        else:
+            # Get chunks from the whole document
+            chunks = get_relevant_chunks("Important concepts and information", pdf_name, k=15)
+            
+        if not chunks:
+            return jsonify({
+                "error": "No content found for this PDF or page"
+            }), 404
+        
+        # Compile document context
+        document_context = "\n---\n".join(
+            f"[Page {chunk['metadata']['page']}]: {chunk['content']}"
+            for chunk in chunks
+        )
+        
+        # Create quiz generation prompt
+        quiz_prompt = f"""Based on the following content from a lecture, create {num_questions} multiple-choice quiz question(s).
+        
+CONTENT:
+{document_context}
+
+For each question:
+1. Create a clear, specific question about the content
+2. Provide 4 options (labeled A, B, C, D)
+3. Indicate which option is correct
+4. Provide a concise explanation of why the correct answer is correct
+
+Format your response as a valid JSON array with this structure:
+[
+  {{
+    "question": "Question text",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctAnswer": "Option X",
+    "explanation": "Why this is correct"
+  }}
+]
+
+Only generate questions specifically about the provided content. If the content is insufficient, return fewer questions.
+"""
+
+        # Generate quiz using the LLM
+        response = llm.invoke(quiz_prompt)
+        response_text = response.content.strip()
+        
+        # Extract JSON from the response (handle potential formatting issues)
+        json_match = re.search(r'\[[\s\S]*\]', response_text)
+        if json_match:
+            json_str = json_match.group(0)
+            quiz_data = json.loads(json_str)
+        else:
+            # Fallback if JSON extraction fails
+            return jsonify({
+                "error": "Failed to generate properly formatted quiz questions"
+            }), 500
+        
+        return jsonify({
+            "quiz": quiz_data
+        })
+        
+    except Exception as e:
+        print(f"Error generating quiz: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            "error": f"Failed to generate quiz: {str(e)}"
+        }), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
