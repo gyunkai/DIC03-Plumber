@@ -589,6 +589,42 @@ def load_pdf():
             "message": f"Failed to load PDF: {str(e)}"
         }), 500
 
+@app.route("/session_history", methods=["POST"])
+def session_history():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, "pdfname", "conversationhistory", "sessionStartTime", "sessionEndTime"
+                FROM "UserSession"
+                WHERE "userId" = %s
+                ORDER BY "sessionStartTime" DESC
+                LIMIT 5
+            """, (user_id,))
+            rows = cursor.fetchall()
+
+        sessions = []
+        for row in rows:
+            sessions.append({
+                "session_id": row[0],
+                "pdf_name": row[1],
+                "conversation_history": row[2],
+                "session_start": row[3],
+                "session_end": row[4],
+            })
+
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+
 @app.route("/", methods=["GET"])
 def home():
     """

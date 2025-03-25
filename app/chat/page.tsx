@@ -66,6 +66,10 @@ export default function ChatPage() {
   const explanation = "Paris is the capital and largest city of France.";
   // ── End NEW: Quiz Mode States ───────────────────────
 
+
+  // ── NEW: Session History ─────────────────────────
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+
   const courses = [
     {
       id: "machine-learning",
@@ -105,6 +109,34 @@ export default function ChatPage() {
     },
   ];
 
+
+  // Fetch Chat history 
+
+  const [sessionHistory, setSessionHistory] = useState<any[]>([]);
+
+  const fetchSessionHistory = async () => {
+  if (!user?.id) return;
+  try {
+    const response = await fetch("/api/session-history", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ user_id: user.id })
+    });
+
+    if (!response.ok) {
+      console.error("Failed to fetch session history");
+      return;
+    }
+
+    const data = await response.json();
+    setSessionHistory(data.sessions || []);
+  } catch (error) {
+    console.error("Error fetching session history:", error);
+  }
+  };
+  
   useEffect(() => {
     // Auto-select first lecture of machine-learning course.
     if (courses.length > 0 && courses[0].lectures.length > 0) {
@@ -168,9 +200,11 @@ export default function ChatPage() {
         }
         const data = await response.json();
         setUser(data.user);
+        console.log("🔍 API /api/user/profile returned:", data);
+        fetchSessionHistory(); // Fetch session history after user info
       } catch (error) {
         console.error("Error fetching user info:", error);
-        router.push("/login");
+        router.push("/login");  
       } finally {
         setUserLoading(false);
       }
@@ -266,14 +300,24 @@ export default function ChatPage() {
         console.error("Failed to save user message");
       }
 
+      console.log("🔍 Sending message with user info:", {
+        userId: user?.id,
+        userName: user?.name,
+        userEmail: user?.email,
+      });
+
       const completionResponse = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
           pdfName: selectedPdf,
+          userId: user?.id,
+          userName: user?.name,
+          userEmail: user?.email,
         }),
       });
+
       if (!completionResponse.ok) {
         throw new Error("Failed to get bot response");
       }
@@ -418,9 +462,54 @@ export default function ChatPage() {
               <LogOut className="h-5 w-5 mr-1" />
               <span>Sign Out</span>
             </button>
+            <button
+                onClick={() => setShowHistoryModal(true)}
+                className="flex items-center text-blue-600 hover:text-blue-800 mr-4"
+              >
+                <FileText className="h-5 w-5 mr-1" />
+                <span>History</span>
+              </button>
+
           </div>
         )}
       </div>
+      {showHistoryModal && (
+        <div className="fixed top-0 right-0 w-96 h-full bg-white shadow-lg z-50 border-l border-gray-300 overflow-y-auto">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold">Session History</h2>
+            <button
+              onClick={() => setShowHistoryModal(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="p-4 space-y-3">
+            {sessionHistory.length === 0 ? (
+              <p className="text-gray-500">No session history available.</p>
+            ) : (
+              sessionHistory.map((session, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-md p-3 hover:bg-gray-50 cursor-pointer"
+                >
+                  <div className="text-sm">
+                    <strong>PDF:</strong> {session.pdf_name}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    <strong>Started:</strong> {new Date(session.session_start).toLocaleString()}
+                  </div>
+                  {session.session_end && (
+                    <div className="text-xs text-gray-600">
+                      <strong>Ended:</strong> {new Date(session.session_end).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
