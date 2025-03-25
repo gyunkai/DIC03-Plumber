@@ -53,15 +53,86 @@ export default function ChatPage() {
   );
 
   // ── NEW: Quiz Mode States ─────────────────────────
-  // These states control the quiz mode functionality.
+    // Quiz mode states (replace the hard-coded ones with dynamic ones)
   const [isQuizMode, setIsQuizMode] = useState(false);
-  const [quizQuestion] = useState("What is the capital of France?");
-  const [quizOptions] = useState(["Paris", "Berlin", "Rome", "Madrid"]);
+  const [quizQuestion, setQuizQuestion] = useState("");
+  const [quizOptions, setQuizOptions] = useState<string[]>([]);
+  const [correctAnswer, setCorrectAnswer] = useState("");
   const [quizFeedback, setQuizFeedback] = useState("");
   const QuizAnswer = "Paris";
-  const correctAnswer = QuizAnswer;
   const explanation = "Paris is the capital and largest city of France.";
   // ── End NEW: Quiz Mode States ───────────────────────
+
+  // ── NEW: Handle Quiz Answer Click ───────────────────
+  // Function to generate a quiz question via Kiwi Bot (backend builds the quiz prompt)
+      const handleGenerateQuizQuestion = async () => {
+        if (!user || !selectedPdf) {
+          console.warn("User info or PDF not loaded; cannot generate quiz.");
+          return;
+        }
+
+        try {
+          // Instead of building the prompt here, we simply send a quiz_mode flag
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              // You can send a placeholder message if needed
+              message: "Generate a quiz question",
+              pdfName: selectedPdf,
+              quiz_mode: true, // Tell backend to use quiz mode prompt
+              userId: user.id,
+              userName: user.name,
+              userEmail: user.email,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to generate quiz question");
+          }
+
+          const data = await response.json();
+          console.log("Quiz response data:", data);
+
+          const botAnswerRaw = data.answer; // The raw response including formatting
+          console.log("botAnswerRaw:", botAnswerRaw);
+
+          // Remove code block markers if present
+          const botAnswerClean = botAnswerRaw
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim();
+
+          console.log("botAnswerClean:", botAnswerClean);
+
+          let parsed;
+          try {
+            parsed = JSON.parse(botAnswerClean);
+          } catch (err) {
+            console.error("Quiz Bot response was not valid JSON after cleaning. Response:", botAnswerClean);
+            setQuizQuestion("Error: Could not parse quiz question.");
+            return;
+          }
+
+          // Update quiz states with the parsed data
+          setQuizQuestion(parsed.question || "No question provided");
+          setQuizOptions(parsed.options || []);
+          setCorrectAnswer(parsed.answer || "");
+          setQuizFeedback("");
+        } catch (error) {
+          console.error("Error generating quiz question:", error);
+        }
+      };
+
+      // Function to check the quiz answer
+      const handleQuizAnswer = (selectedOption: string) => {
+        // For options formatted as "A. Option text"
+        if (selectedOption.charAt(0).toUpperCase() === correctAnswer.toUpperCase()) {
+          setQuizFeedback("Correct!");
+        } else {
+          setQuizFeedback(`Incorrect! The correct answer is ${correctAnswer}.`);
+        }
+      };
 
 
   // ── NEW: Session History ─────────────────────────
@@ -441,21 +512,23 @@ useEffect(() => {
   };
 
   // ── NEW: Handle Quiz Answer Click ──
-  // This function checks if the selected answer is correct.
-  const handleQuizAnswer = (selectedOption: string) => {
-    if (selectedOption === QuizAnswer) {
-      setQuizFeedback("Correct!");
-    } else {
-      setQuizFeedback(`Incorrect! The correct answer is ${QuizAnswer}. ${explanation}`);
-    }
-  };
+  
 
   // ── NEW: Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
   const toggleQuizMode = () => {
-    setIsQuizMode((prev) => !prev);
+    setIsQuizMode((prev) => {
+      if (prev) {
+        // We're leaving quiz mode: clear quiz data
+        setQuizQuestion("");
+        setQuizOptions([]);
+        setCorrectAnswer("");
+      }
+      return !prev;
+    });
     setQuizFeedback("");
   };
+  
 
   // 在页面组件中添加一个全局的消息监听器
   useEffect(() => {
@@ -509,13 +582,21 @@ useEffect(() => {
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
         {/* ── NEW: Upper Left Quiz Mode Toggle Button ── */}
         <div className="flex items-center">
-          <button
-            onClick={toggleQuizMode}
-            className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
-          >
-            {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
-          </button>
-        </div>
+            <button
+              onClick={toggleQuizMode}
+              className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
+            >
+              {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
+            </button>
+            {isQuizMode && (
+              <button
+                onClick={handleGenerateQuizQuestion}
+                className="mr-2 px-2 py-1 bg-green-500 text-white rounded"
+              >
+                Generate Quiz Question
+              </button>
+            )}
+          </div>
         <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
         {/* User info and logout button */}
         {userLoading ? (
@@ -763,28 +844,34 @@ useEffect(() => {
               <h2 className="text-xl font-bold text-gray-800">Chat</h2>
             </div>
             {isQuizMode ? (
-              // NEW: Quiz Mode UI Block
-              <div className="flex-1 p-4 overflow-y-auto bg-white">
-                <h2 className="text-lg font-bold mb-2">Quiz Mode</h2>
-                <p className="mb-4">{quizQuestion}</p>
-                <div className="flex flex-col gap-2">
-                  {quizOptions.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleQuizAnswer(option)}
-                      className="p-3 rounded-lg bg-gray-100 hover:bg-blue-50 text-left"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                {quizFeedback && (
-                  <div className="mt-4 p-3 rounded-lg bg-gray-100">
-                    {quizFeedback}
+            <div className="flex-1 p-4 overflow-y-auto bg-white">
+              {quizQuestion ? (
+                <>
+                  <p className="mb-4 font-semibold">{quizQuestion}</p>
+                  <div className="flex flex-col gap-2">
+                    {quizOptions.map((option, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleQuizAnswer(option)}
+                        className="p-3 rounded-lg bg-gray-100 hover:bg-blue-50 text-left"
+                      >
+                        {option}
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-            ) : (
+                  {quizFeedback && (
+                    <div className="mt-4 p-3 rounded-lg bg-gray-100">
+                      {quizFeedback}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-gray-500">
+                  Click "Generate Quiz Question" to start a quiz!
+                </p>
+              )}
+            </div>
+          ) : (
               // Existing Chat UI Block
               <>
                 <div className="flex-1 p-4 overflow-y-auto bg-white">
