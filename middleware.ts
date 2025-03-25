@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Define protected routes that require authentication
-// const protectedRoutes = ['/profile', '/chat'];
-const protectedRoutes = [''];
+const protectedRoutes = ['/profile', '/chat'];
 
 // This middleware runs before every request
 export function middleware(request: NextRequest) {
