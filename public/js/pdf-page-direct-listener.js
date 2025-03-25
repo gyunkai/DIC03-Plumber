@@ -5,7 +5,23 @@
 
 (function () {
     console.log('[Direct Listener] Script loaded at', new Date().toISOString());
+    // Listen for scroll-to-page messages from parent React app
+    window.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "PDF_SCROLL_TO_PAGE") {
+        const pageNumber = event.data.page;
+        if (
+            typeof pageNumber === "number" &&
+            window.PDFViewerApplication &&
+            Number.isInteger(pageNumber)
+        ) {
+            console.log("[Direct Listener] Scrolling to page:", pageNumber);
+            window.PDFViewerApplication.page = pageNumber;
+        }
+        }
+    });
 
+    
+  
     // Function to check current page periodically
     function startPageCheck() {
         console.log('[Direct Listener] Starting page checking...');

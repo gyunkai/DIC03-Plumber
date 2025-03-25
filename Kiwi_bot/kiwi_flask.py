@@ -7,6 +7,8 @@ from langchain.prompts import PromptTemplate
 from langchain.schema import SystemMessage
 import numpy as np
 import json
+from psycopg2.extras import Json
+from datetime import datetime
 from typing import List, Dict
 import psycopg2
 from psycopg2.extras import Json
@@ -15,6 +17,8 @@ from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 import time
 import traceback
+import uuid
+
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -43,6 +47,7 @@ if not OPENAI_API_KEY:
 
 # Initialize embeddings
 embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+
 
 # Initialize database connection
 def get_db_connection():
@@ -90,6 +95,63 @@ def get_db_connection():
         except Exception as retry_e:
             print(f"ERROR: Failed retry connection: {str(retry_e)}")
             raise
+
+
+def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Check if session exists and is active
+            cursor.execute("""
+                SELECT id, "conversationhistory" FROM "UserSession"
+                WHERE "userId" = %s AND "sessionEndTime" IS NULL
+                ORDER BY "sessionStartTime" DESC
+                LIMIT 1
+            """, (user_id,))
+
+            session = cursor.fetchone()
+
+            message_entry_user = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "sender": "user",
+                "message": user_input
+            }
+            message_entry_bot = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "sender": "bot",
+                "message": bot_response
+            }
+
+            if session:
+                session_id, conversation_history = session
+                conversation_history.append(message_entry_user)
+                conversation_history.append(message_entry_bot)
+
+                cursor.execute("""
+                    UPDATE "UserSession"
+                    SET "conversationhistory" = %s
+                    WHERE id = %s
+                """, (Json(conversation_history), session_id))
+
+                print(f"Updated existing session {session_id}")
+
+            else:
+                # Create new session if none exists
+                session_id = str(uuid.uuid4())
+                conversation_history = [message_entry_user, message_entry_bot]
+
+                cursor.execute("""
+                    INSERT INTO "UserSession" (id, "userId", "pdfname", "conversationhistory", "sessionStartTime")
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (session_id, user_id, pdf_name, Json(conversation_history), datetime.utcnow()))
+
+                print(f"Created new session {session_id}")
+
+        conn.commit()
+    except Exception as e:
+        print(f"Error in session management: {e}")
+    finally:
+        conn.close()
 
 # Load embeddings from database
 def load_embeddings_from_db(pdf_name: str = None) -> List[Dict]:
@@ -204,11 +266,32 @@ system_prompt = (
     "especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. "
     "Here you are tasked with answering questions based on the document provided which is for Introduction to Programming. "
     "Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. "
-    "For each answer, you must cite your sources by referencing the page numbers in [Page X] format. "
+    "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links."
     "Always include these page references when providing information from the document. "
     "Make your answers helpful and informative while clearly indicating which page contains the information."
+    "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
+
 )
-memory.chat_memory.messages.append(SystemMessage(content=system_prompt))
+
+user_memories = {}
+
+def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/A"):
+    if user_id not in user_memories:
+        user_memories[user_id] = {
+            "memory": ConversationBufferMemory(memory_key="chat_history", return_messages=True),
+            "personalized_prompt": (
+                f"{system_prompt}\n\n"
+                f"The user's name is {user_name}. "
+                f"The user's email address is {user_email}. "
+                f"The user's unique ID is {user_id}."
+            )
+        }
+        # Initialize memory with system prompt
+        user_memories[user_id]["memory"].chat_memory.messages.append(
+            SystemMessage(content=user_memories[user_id]["personalized_prompt"])
+        )
+
+    return user_memories[user_id]
 
 # Initialize Chat Model
 print("Initializing Chat Model...")
@@ -228,17 +311,18 @@ prompt_template = PromptTemplate(
     )
 )
 
-def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Dict]:
+def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fallback: bool = True) -> List[Dict]:
     query_embedding = embeddings.embed_query(query)
     
     conn = get_db_connection()
     chunks = []
-    
+    used_fallback = False
+
     try:
         with conn.cursor() as cursor:
             cursor.execute("SET statement_timeout = 30000;")
-            
-            # Use pgvector similarity search
+
+            # First: try within the specified PDF
             if pdf_name:
                 sql = """
                 SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
@@ -248,7 +332,22 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, pdf_name, query_embedding, k))
+                rows = cursor.fetchall()
+
+                if not rows and allow_fallback:
+                    # Fallback: search across ALL PDFs
+                    used_fallback = True
+                    print("⚠️ No matches in current PDF. Falling back to global search.")
+                    sql = """
+                    SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+                    FROM "PdfChunk"
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s;
+                    """
+                    cursor.execute(sql, (query_embedding, query_embedding, k))
+                    rows = cursor.fetchall()
             else:
+                # Default to global search if no PDF name provided
                 sql = """
                 SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
                 FROM "PdfChunk"
@@ -256,8 +355,7 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, query_embedding, k))
-
-            rows = cursor.fetchall()
+                rows = cursor.fetchall()
 
             for row in rows:
                 id, content, page_number, pdf, distance = row
@@ -276,7 +374,8 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5) -> List[Di
     finally:
         conn.close()
 
-    return chunks
+    return chunks, used_fallback
+
 
 def get_fallback_chunks(pdf_name: str = None, k: int = 10) -> List[Dict]:
     """
@@ -348,10 +447,11 @@ def get_document_context(query: str) -> str:
     # Format relevant chunks with page information
     formatted_chunks = []
     for i, chunk in enumerate(relevant_chunks):
-        page_info = f"[Page {chunk['metadata'].get('page', 'unknown')}]"
-        content = chunk['content']
-        formatted_chunks.append(f"{page_info+1}: {content}")
-        print(f"Chunk {i}: Page {chunk['metadata'].get('page', 'unknown')}, Content length: {len(content)}")
+        page_number = chunk['metadata'].get('page', 'unknown')
+        content = chunk['content']  # ✅ Define content properly
+        page_info = f"[Page {page_number}]"
+        formatted_chunks.append(f"{page_info}: {content}")  # ✅ Use content properly
+        print(f"Chunk {i}: Page {page_number}, Content length: {len(content)}")
     
     result = "\n---\n".join(formatted_chunks)
     print(f"Total context length: {len(result)} characters")
@@ -411,22 +511,44 @@ def query():
 
     user_input = data["query"]
     pdf_name = data.get("pdf_name")
+    user_id = data.get('user_id', 'anonymous')
+    user_name = data.get('user_name', 'User')
+    user_email = data.get('user_email', 'N/A')
 
-    relevant_chunks = get_relevant_chunks(user_input, pdf_name, k=5)
+    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name}")
+
+    # Fetch user-specific memory and personalized prompt
+    user_data = get_user_memory(user_id, user_name, user_email)
+    memory = user_data["memory"]
+    personalized_prompt = user_data["personalized_prompt"]
+
+    relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name, k=5)  
+
 
     if not relevant_chunks:
         document_context = "No relevant context found."
     else:
-        document_context = "\n---\n".join(
-            f"[Page {chunk['metadata']['page']}]: {chunk['content']}"
+        fallback_note = ""
+        if used_fallback:
+            fallback_note = (
+                "**Note:** No relevant content found in the current lecture. "
+                "The following information comes from other lectures.\n\n"
+            )
+
+        document_context = fallback_note + "\n---\n".join(
+            f"[Page {chunk['metadata']['page']}](page://{chunk['metadata']['page']}): {chunk['content']}"
             for chunk in relevant_chunks
         )
 
-    # Create prompt
+    chat_history_str = "\n".join(
+        msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
+    )
+
+    # Explicitly using personalized prompt here
     full_prompt = prompt_template.format(
-        system_prompt=system_prompt,
+        system_prompt=personalized_prompt,  # <-- Use the personalized prompt!
         document_context=document_context,
-        chat_history="\n".join(msg.content for msg in memory.chat_memory.messages if isinstance(msg, SystemMessage) is False),
+        chat_history=chat_history_str,
         user_input=user_input
     )
 
@@ -436,7 +558,11 @@ def query():
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(answer_text)
 
+    create_or_update_user_session(user_id, pdf_name, user_input, answer_text)
+
     return jsonify({"answer": answer_text})
+
+
 
 
 @app.route("/load_pdf", methods=["POST"])
@@ -462,6 +588,42 @@ def load_pdf():
             "status": "error",
             "message": f"Failed to load PDF: {str(e)}"
         }), 500
+
+@app.route("/session_history", methods=["POST"])
+def session_history():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "Missing user_id"}), 400
+
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, "pdfname", "conversationhistory", "sessionStartTime", "sessionEndTime"
+                FROM "UserSession"
+                WHERE "userId" = %s
+                ORDER BY "sessionStartTime" DESC
+                LIMIT 5
+            """, (user_id,))
+            rows = cursor.fetchall()
+
+        sessions = []
+        for row in rows:
+            sessions.append({
+                "session_id": row[0],
+                "pdf_name": row[1],
+                "conversation_history": row[2],
+                "session_start": row[3],
+                "session_end": row[4],
+            })
+
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 
 @app.route("/", methods=["GET"])
 def home():
