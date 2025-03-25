@@ -10,6 +10,7 @@ import {
   User,
   FileText,
   BookOpen,
+  Menu,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import MarkdownWithPageLinks from "@/components/MarkdownWithPageLinks";
@@ -55,12 +56,21 @@ export default function ChatPage() {
   // ── NEW: Quiz Mode States ─────────────────────────
     // Quiz mode states (replace the hard-coded ones with dynamic ones)
   const [isQuizMode, setIsQuizMode] = useState(false);
-  const [quizQuestion, setQuizQuestion] = useState("");
-  const [quizOptions, setQuizOptions] = useState<string[]>([]);
-  const [correctAnswer, setCorrectAnswer] = useState("");
-  const [quizFeedback, setQuizFeedback] = useState("");
-  const QuizAnswer = "Paris";
-  const explanation = "Paris is the capital and largest city of France.";
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [quizFeedback, setQuizFeedback] = useState<{
+    isCorrect?: boolean;
+    answer?: string;
+    explanation?: string;
+  }>({});
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizError, setQuizError] = useState("");
+  // Quiz settings
+  const [quizNumQuestions, setQuizNumQuestions] = useState(3);
+  const [quizDifficulty, setQuizDifficulty] = useState<
+    "easy" | "medium" | "hard"
+  >("medium");
+  const [showQuizSettings, setShowQuizSettings] = useState(true);
   // ── End NEW: Quiz Mode States ───────────────────────
 
   // ── NEW: Handle Quiz Answer Click ───────────────────
@@ -144,9 +154,8 @@ export default function ChatPage() {
       name: "Machine Learning",
       lectures: Array.from({ length: 48 }, (_, i) => ({
         name: `ML Lecture ${i + 1}`,
-        key: `mlpdf/lecture${i + 1}.pdf`
-      }))
-
+        key: `mlpdf/lecture${i + 1}.pdf`,
+      })),
     },
     {
       id: "linear-algebra",
@@ -161,7 +170,6 @@ export default function ChatPage() {
       id: "probability",
       name: "Probability and Statistics",
       lectures: Array.from({ length: 27 }, (_, i) => ({
-
         name: `Prob Lecture ${String(i + 1).padStart(2, "0")}`,
         key: `pbpdf/Lecture ${String(i + 1).padStart(2, "0")}.pdf`,
       })),
@@ -252,7 +260,6 @@ export default function ChatPage() {
         }
       })();
     }
-
   }, []);
 
   const getCourseLectures = () => {
@@ -278,7 +285,6 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
 
   // Fetch user info from backend.
   useEffect(() => {
@@ -314,7 +320,6 @@ export default function ChatPage() {
         if (!response.ok) throw new Error("Failed to fetch PDF list");
         const data = await response.json();
         setPdfFiles(data.files);
-
       } catch (error) {
         console.error("Error fetching PDF list:", error);
       } finally {
@@ -432,7 +437,6 @@ useEffect(() => {
     setInput("");
     setSendingMessage(true);
     try {
-
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -506,27 +510,107 @@ useEffect(() => {
     }
   };
 
-
   const getPdfUrl = (key: string) => {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
   // ── NEW: Handle Quiz Answer Click ──
-  
+  // This function checks if the selected answer is correct.
+  const handleQuizAnswer = (selectedOption: string) => {
+    if (!quizQuestions || quizQuestions.length === 0) return;
+
+    const currentQuestion = quizQuestions[currentQuestionIndex];
+    if (selectedOption === currentQuestion.correctAnswer) {
+      setQuizFeedback({
+        isCorrect: true,
+        answer: currentQuestion.correctAnswer,
+        explanation: currentQuestion.explanation,
+      });
+    } else {
+      setQuizFeedback({
+        isCorrect: false,
+        answer: currentQuestion.correctAnswer,
+        explanation: currentQuestion.explanation,
+      });
+    }
+  };
 
   // ── NEW: Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
   const toggleQuizMode = () => {
-    setIsQuizMode((prev) => {
-      if (prev) {
-        // We're leaving quiz mode: clear quiz data
-        setQuizQuestion("");
-        setQuizOptions([]);
-        setCorrectAnswer("");
+    const newQuizMode = !isQuizMode;
+    setIsQuizMode(newQuizMode);
+    setQuizFeedback({});
+
+    // Clear existing quiz questions when entering quiz mode
+    if (newQuizMode) {
+      setQuizQuestions([]);
+      setQuizError("");
+    }
+  };
+
+  // ── NEW: Generate Quiz Function ──
+  // Calls the backend API to generate quiz questions.
+  const generateQuiz = async () => {
+    if (!selectedPdf) return;
+
+    setGeneratingQuiz(true);
+    setQuizError("");
+
+    try {
+      const response = await fetch("/api/quiz", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pdfKey: selectedPdf,
+          numberOfQuestions: quizNumQuestions,
+          difficulty: quizDifficulty,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setQuizQuestions(data.quiz);
+        setCurrentQuestionIndex(0);
+        setQuizFeedback({});
+      } else {
+        setQuizError(data.error || "Failed to generate quiz questions");
+        console.error("Quiz generation error:", data.error);
       }
-      return !prev;
-    });
-    setQuizFeedback("");
+    } catch (error) {
+      console.error("Error generating quiz:", error);
+      setQuizError("Error connecting to quiz service");
+    } finally {
+      setGeneratingQuiz(false);
+    }
+  };
+
+  // ── NEW: Next Question Function ──
+  // Moves to the next question in the quiz.
+  const handleNextQuestion = () => {
+    if (currentQuestionIndex < quizQuestions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setQuizFeedback({});
+    }
+  };
+
+  // ── NEW: Previous Question Function ──
+  // Moves to the previous question in the quiz.
+  const handlePreviousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+      setQuizFeedback({});
+    }
+  };
+
+  const handlePageChange = (event: MessageEvent) => {
+    // Handler for PDF page change events
+    if (event.data && event.data.type === "PDF_PAGE_CHANGE") {
+      console.log(`Page changed to: ${event.data.page}/${event.data.total}`);
+    }
   };
   
 
@@ -534,45 +618,56 @@ useEffect(() => {
   useEffect(() => {
     // 监听PDF.js查看器发来的页面变化事件
     const handlePageChange = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'PDF_PAGE_CHANGE') {
+      if (event.data && event.data.type === "PDF_PAGE_CHANGE") {
         // Log page change event with detailed information (English)
-        console.log(`[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`);
+        console.log(
+          `[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`
+        );
 
         // 发送当前页码信息到后端
         if (selectedPdf) {
-          console.log(`[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`);
+          console.log(
+            `[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`
+          );
 
-          fetch('/api/current-page', {
-            method: 'POST',
+          fetch("/api/current-page", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json'
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({
               pdfKey: selectedPdf,
               currentPage: event.data.page,
-              totalPages: event.data.total
-            })
+              totalPages: event.data.total,
+            }),
           })
-            .then(response => {
+            .then((response) => {
               // Log response status (English)
-              console.log(`[PDF Backend] Server responded with status: ${response.status} ${response.ok ? '(Success)' : '(Failed)'}`);
+              console.log(
+                `[PDF Backend] Server responded with status: ${
+                  response.status
+                } ${response.ok ? "(Success)" : "(Failed)"}`
+              );
               return response.json();
             })
-            .then(data => {
+            .then((data) => {
               // Log response data (English)
-              console.log('[PDF Backend] Response data:', data);
+              console.log("[PDF Backend] Response data:", data);
             })
-            .catch(error => {
-              console.error('[PDF Backend] Error sending page info to backend:', error);
+            .catch((error) => {
+              console.error(
+                "[PDF Backend] Error sending page info to backend:",
+                error
+              );
             });
         }
       }
     };
 
-    window.addEventListener('message', handlePageChange);
+    window.addEventListener("message", handlePageChange);
 
     return () => {
-      window.removeEventListener('message', handlePageChange);
+      window.removeEventListener("message", handlePageChange);
     };
   }, [selectedPdf]);
 
@@ -580,23 +675,6 @@ useEffect(() => {
     <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* HEADER */}
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
-        {/* ── NEW: Upper Left Quiz Mode Toggle Button ── */}
-        <div className="flex items-center">
-            <button
-              onClick={toggleQuizMode}
-              className="mr-2 px-2 py-1 bg-blue-500 text-white rounded"
-            >
-              {isQuizMode ? "Quit Quiz Mode" : "Quiz Mode"}
-            </button>
-            {isQuizMode && (
-              <button
-                onClick={handleGenerateQuizQuestion}
-                className="mr-2 px-2 py-1 bg-green-500 text-white rounded"
-              >
-                Generate Quiz Question
-              </button>
-            )}
-          </div>
         <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
         {/* User info and logout button */}
         {userLoading ? (
@@ -715,16 +793,18 @@ useEffect(() => {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <div
-          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
-            } overflow-hidden`}
+          className={`bg-gray-50 transition-all duration-300 ${
+            isSidebarOpen ? "w-64" : "w-0"
+          } overflow-hidden`}
         >
           <div className="p-4">
             <h2 className="text-lg font-bold mb-4">Current Courses</h2>
             <ul className="mb-6">
               <li
                 onClick={() => handleCourseSelect("machine-learning")}
-                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === "machine-learning" ? "bg-blue-100" : ""
-                  } flex items-center justify-between`}
+                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                  selectedCourse === "machine-learning" ? "bg-blue-100" : ""
+                } flex items-center justify-between`}
               >
                 <span>Machine Learning</span>
                 <BookOpen className="h-4 w-4 text-gray-500" />
@@ -737,8 +817,9 @@ useEffect(() => {
                 <li
                   key={index}
                   onClick={() => handleCourseSelect(course.id)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
-                    } flex items-center justify-between`}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                    selectedCourse === course.id ? "bg-blue-100" : ""
+                  } flex items-center justify-between`}
                 >
                   <span>{course.name}</span>
                   <BookOpen className="h-4 w-4 text-gray-500" />
@@ -748,17 +829,20 @@ useEffect(() => {
 
             <h2 className="text-lg font-bold mb-2">PDF Files</h2>
             <ul className="overflow-y-auto max-h-[calc(100vh-350px)] pr-1">
-              {(selectedCourse ? getCourseLectures() : pdfFiles).map((pdf, index) => (
-                <li
-                  key={index}
-                  onClick={() => setSelectedPdf(pdf.key)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedPdf === pdf.key ? "bg-blue-100" : ""
+              {(selectedCourse ? getCourseLectures() : pdfFiles).map(
+                (pdf, index) => (
+                  <li
+                    key={index}
+                    onClick={() => setSelectedPdf(pdf.key)}
+                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
+                      selectedPdf === pdf.key ? "bg-blue-100" : ""
                     } flex items-center`}
-                >
-                  <FileText className="h-4 w-4 mr-2 text-gray-500" />
-                  {pdf.name}
-                </li>
-              ))}
+                  >
+                    <FileText className="h-4 w-4 mr-2 text-gray-500" />
+                    {pdf.name}
+                  </li>
+                )
+              )}
             </ul>
           </div>
         </div>
@@ -775,7 +859,18 @@ useEffect(() => {
 
           {/* PDF VIEWER (70% width) */}
           <div className="w-[70%] p-4 overflow-hidden flex flex-col">
-            <h2 className="text-lg font-bold mb-2">PDF Viewer</h2>
+            <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex justify-between items-center">
+              <div className="flex items-center">
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 mr-2"
+                  aria-label="Toggle sidebar"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <h2 className="text-xl font-bold text-gray-800">PDF Viewer</h2>
+              </div>
+            </div>
             <div className="flex-1 h-[calc(100vh-200px)] relative">
               {loading ? (
                 <div className="flex-1 flex items-center justify-center">
@@ -796,11 +891,15 @@ useEffect(() => {
                     {/* PDF viewer using PDF.js with proxy to avoid CORS issues */}
                     <iframe
                       src={(() => {
-                        if (!pdfUrl) return '';
+                        if (!pdfUrl) return "";
                         // Use our proxy to access the PDF from the same origin
-                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(pdfUrl)}`;
+                        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(
+                          pdfUrl
+                        )}`;
                         // Add parameters to support communication and disable same-origin restrictions
-                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(proxyUrl)}&disableXfa=true&embedded=true`;
+                        return `/pdfjs/web/viewer.html?file=${encodeURIComponent(
+                          proxyUrl
+                        )}&disableXfa=true&embedded=true`;
                       })()}
                       className="w-full h-full border-0"
                       name="pdfjs-viewer"
@@ -810,7 +909,7 @@ useEffect(() => {
                         setPdfLoading(false);
 
                         // Load the page listener script after iframe is loaded
-                        const script = document.createElement('script');
+                        const script = document.createElement("script");
                         script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`; // Add timestamp to prevent caching
                         document.body.appendChild(script);
 
@@ -821,7 +920,7 @@ useEffect(() => {
                               script.parentNode.removeChild(script);
                             }
                           } catch (e) {
-                            console.error('Error removing script:', e);
+                            console.error("Error removing scripts:", e);
                           }
                         };
                       }}
@@ -836,28 +935,232 @@ useEffect(() => {
             </div>
           </div>
 
-
           {/* CHAT / QUIZ SECTION (50% width) */}
           <div className="w-1/2 border-l border-gray-200 flex flex-col">
-            {/* Chat header (removed duplicated quiz toggle here) */}
-            <div className="p-4 border-b border-gray-200 bg-white shadow-sm">
+            {/* Chat header */}
+            <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800">Chat</h2>
+              <button
+                onClick={toggleQuizMode}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              >
+                {isQuizMode ? "Exit Quiz Mode" : "Enter Quiz Mode"}
+              </button>
             </div>
             {isQuizMode ? (
-            <div className="flex-1 p-4 overflow-y-auto bg-white">
-              {quizQuestion ? (
-                <>
-                  <p className="mb-4 font-semibold">{quizQuestion}</p>
-                  <div className="flex flex-col gap-2">
-                    {quizOptions.map((option, idx) => (
+              // Quiz Mode UI Block
+              <div className="flex-1 p-4 overflow-y-auto bg-white">
+                <h2 className="text-lg font-bold mb-4">Quiz Mode</h2>
+
+                {/* Collapsible Settings Panel */}
+                <div className="mb-5">
+                  <button
+                    onClick={() => setShowQuizSettings(!showQuizSettings)}
+                    className="w-full flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200 text-blue-800 font-medium hover:bg-blue-100 transition-colors"
+                  >
+                    <div className="flex items-center">
+                      <span>Settings</span>
+                      {!showQuizSettings && (
+                        <span className="ml-2 text-xs text-blue-600 bg-blue-100 py-0.5 px-2 rounded-full">
+                          {quizNumQuestions} questions • {quizDifficulty}{" "}
+                          difficulty
+                        </span>
+                      )}
+                    </div>
+                    <svg
+                      className={`w-5 h-5 transition-transform duration-200 ${
+                        showQuizSettings ? "rotate-180" : ""
+                      }`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </button>
+
+                  {showQuizSettings && (
+                    <div className="mt-3 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex justify-between mb-1.5">
+                            <label className="text-sm font-medium text-gray-700">
+                              Number of Questions:
+                            </label>
+                            <span className="text-sm font-semibold text-blue-700">
+                              {quizNumQuestions}
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value={quizNumQuestions}
+                            onChange={(e) =>
+                              setQuizNumQuestions(Number(e.target.value))
+                            }
+                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            aria-label="Number of quiz questions"
+                          />
+                          <div className="flex justify-between mt-1 text-xs text-gray-500">
+                            <span>1</span>
+                            <span>5</span>
+                            <span>10</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1.5 text-gray-700">
+                            Difficulty Level:
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {["easy", "medium", "hard"].map((level) => (
+                              <button
+                                key={level}
+                                onClick={() =>
+                                  setQuizDifficulty(
+                                    level as "easy" | "medium" | "hard"
+                                  )
+                                }
+                                className={`py-1.5 px-2 rounded-md capitalize text-sm text-center
+                                  ${
+                                    quizDifficulty === level
+                                      ? "bg-blue-600 text-white font-medium"
+                                      : "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+                                  } transition-colors`}
+                              >
+                                {level}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            generateQuiz();
+                            setShowQuizSettings(false);
+                          }}
+                          className="w-full mt-2 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium flex items-center justify-center"
+                        >
+                          {generatingQuiz ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                              Generating...
+                            </>
+                          ) : (
+                            "Generate Quiz"
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {quizError ? (
+                  <div className="p-4 bg-red-100 text-red-700 rounded-md mb-4">
+                    <p>{quizError}</p>
+                  </div>
+                ) : quizQuestions.length === 0 ? (
+                  <div className="mt-5 p-4 bg-yellow-50 border border-yellow-200 rounded-md text-center">
+                    <p className="text-yellow-800">
+                      Configure your quiz settings and click "Generate Quiz" to
+                      begin.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <div className="mb-3 flex justify-between items-center">
+                      <span className="text-sm text-gray-600 font-medium">
+                        Question {currentQuestionIndex + 1} of{" "}
+                        {quizQuestions.length}
+                      </span>
                       <button
-                        key={idx}
-                        onClick={() => handleQuizAnswer(option)}
-                        className="p-3 rounded-lg bg-gray-100 hover:bg-blue-50 text-left"
+                        onClick={() => setShowQuizSettings(!showQuizSettings)}
+                        className="text-xs py-1 px-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md transition-colors"
                       >
-                        {option}
+                        {showQuizSettings ? "Hide Settings" : "Show Settings"}
                       </button>
-                    ))}
+                    </div>
+
+                    <div className="p-5 bg-blue-50 rounded-lg mb-4 shadow-sm">
+                      <p className="font-medium text-lg mb-4 text-gray-800">
+                        {quizQuestions[currentQuestionIndex]?.question}
+                      </p>
+                      <div className="flex flex-col gap-3 mt-4">
+                        {quizQuestions[currentQuestionIndex]?.options.map(
+                          (option: string, idx: number) => {
+                            const labels = ["A", "B", "C", "D"];
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => handleQuizAnswer(option)}
+                                className="p-4 rounded-lg bg-white hover:bg-blue-100 text-left border border-gray-200 transition-colors flex items-start"
+                              >
+                                <span className="inline-flex items-center justify-center bg-blue-100 text-blue-800 rounded-full h-6 w-6 min-w-6 mr-3 font-medium">
+                                  {labels[idx]}
+                                </span>
+                                <span>{option}</span>
+                              </button>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
+
+                    {quizFeedback.answer && (
+                      <div className="mt-4 rounded-lg border border-gray-200 mb-4 overflow-hidden">
+                        <div
+                          className={`p-3 ${
+                            quizFeedback.isCorrect
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          } font-medium`}
+                        >
+                          {quizFeedback.isCorrect ? "Correct!" : "Incorrect!"}
+                        </div>
+                        <div className="p-4">
+                          <div className="mb-2">
+                            <span className="font-medium">Correct answer:</span>{" "}
+                            {quizFeedback.answer}
+                          </div>
+                          <div>
+                            <span className="font-medium">Explanation:</span>{" "}
+                            {quizFeedback.explanation}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between mt-4">
+                      <button
+                        onClick={handlePreviousQuestion}
+                        disabled={currentQuestionIndex === 0}
+                        className={`px-4 py-2 rounded-md ${
+                          currentQuestionIndex === 0
+                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                        } transition-colors`}
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={handleNextQuestion}
+                        disabled={
+                          currentQuestionIndex === quizQuestions.length - 1
+                        }
+                        className={`px-4 py-2 rounded-md ${
+                          currentQuestionIndex === quizQuestions.length - 1
+                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                        } transition-colors`}
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                   {quizFeedback && (
                     <div className="mt-4 p-3 rounded-lg bg-gray-100">
@@ -884,10 +1187,11 @@ useEffect(() => {
                       {messages.map((message, index) => (
                         <div
                           key={message.id || index}
-                          className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
-                            ? "bg-blue-100 ml-auto"
-                            : "bg-gray-100 mr-auto"
-                            }`}
+                          className={`mb-3 p-3 rounded max-w-[90%] ${
+                            message.sender === "user"
+                              ? "bg-blue-100 ml-auto"
+                              : "bg-gray-100 mr-auto"
+                          }`}
                         >
                           <div className="prose prose-sm">
                           <MarkdownWithPageLinks content={message.content} />
