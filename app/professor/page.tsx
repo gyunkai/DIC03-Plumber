@@ -50,8 +50,14 @@ const mockDashboardData: DashboardData = {
           "Gradient Descent",
           "SVD",
           "Calculus Derivations",
+          "Optimization Proofs",
+          "Regularization",
+          "Deep Learning",
+          "Loss Functions",
+          "Probability Theory",
+          "Ensemble Learning"
         ],
-        values: [50, 35, 25, 15],
+        values: [50, 35, 25, 15, 20, 30, 40, 20, 10, 15],
       },
     },
     keyInsights: [
@@ -91,7 +97,26 @@ const mockDashboardData: DashboardData = {
       chatHistorySummary:
         "User6 has been actively engaging in discussions about the mathematical models behind regularization techniques. They are particularly curious about the derivation of L1 and L2 regularization penalties and how these affect model complexity.",
     },
-    // ... add more entries to simulate real-life scenarios
+    {
+      id: "user7",
+      chatHistorySummary:
+        "User7's chat history is focused on the mathematical foundations of deep learning architectures. They have asked questions about the role of activation functions, weight initialization strategies, and the impact of batch normalization on training stability.",
+    },
+    {
+      id: "user8",
+      chatHistorySummary:
+        "User8's interactions revolve around the mathematical properties of loss functions in machine learning. They are interested in understanding the geometric interpretation of loss surfaces and how optimization algorithms navigate these surfaces to find minima.",
+    },
+    {
+      id: "user9",
+      chatHistorySummary:
+        "User9's chat history explores the connection between probability theory and machine learning models. They have raised questions about the use of Bayes' theorem in classification tasks and the relationship between likelihood estimation and model fitting.",
+    },
+    {
+      id: "user10",
+      chatHistorySummary:
+        "User10 is interested in the mathematical principles behind ensemble learning methods. Their questions focus on the aggregation strategies used in boosting and bagging algorithms and the theoretical guarantees of ensemble model performance.",
+    }
   ],
 };
 
