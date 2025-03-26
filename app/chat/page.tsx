@@ -360,7 +360,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: user.id,
-          pdfName: selectedPdf.split("/").pop(), // just filename
+          pdfname: selectedPdf.split("/").pop(), // just filename
         }),
       });
 
@@ -382,6 +382,7 @@ export default function ChatPage() {
     setMessages([...messages, userMessage]);
     setInput("");
     setSendingMessage(true);
+
     try {
       const saveResponse = await fetch("/api/chat/messages", {
         method: "POST",
@@ -396,13 +397,15 @@ export default function ChatPage() {
         console.error("Failed to save user message");
       }
 
-      console.log("🔍 Sending message with user info:", {
-        userId: user?.id,
-        userName: user?.name,
-        userEmail: user?.email,
-      });
+      // Create a new bot message placeholder
+      const botMessage: Message = {
+        content: "",
+        sender: "bot",
+      };
+      setMessages((prev) => [...prev, botMessage]);
 
-      const completionResponse = await fetch("/api/chat", {
+      // Send the message to the streaming endpoint
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -415,25 +418,67 @@ export default function ChatPage() {
         }),
       });
 
-      if (!completionResponse.ok) {
-        throw new Error("Failed to get bot response");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get bot response");
       }
-      const completionData = await completionResponse.json();
-      if (completionData.answer) {
-        const botMessage: Message = {
-          content: completionData.answer,
-          sender: "bot",
-        };
-        setMessages((prev) => [...prev, botMessage]);
-      } else {
-        throw new Error("Invalid response format from bot");
+
+      // Create a reader for the response stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Failed to get response reader");
       }
-    } catch (error) {
+
+      // Create a buffer to store the complete message
+      let buffer = "";
+      let lastMessageContent = "";
+
+      // Read the stream
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Convert the chunk to text
+        const text = new TextDecoder().decode(value);
+        buffer += text;
+
+        // Process complete SSE messages
+        const messages = buffer.split('\n\n');
+        // Keep the last incomplete message in the buffer
+        buffer = messages.pop() || "";
+
+        for (const message of messages) {
+          if (message.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(message.slice(6));
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              if (data.answer) {
+                lastMessageContent += data.answer;
+                setMessages((prev) => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  if (lastMessage.sender === "bot") {
+                    lastMessage.content = lastMessageContent;
+                    return newMessages;
+                  }
+                  return prev;
+                });
+              }
+            } catch (error) {
+              console.error("Error parsing streaming data:", error);
+              throw error;
+            }
+          }
+        }
+      }
+    } catch (error: any) {
       console.error("Error in chat interaction:", error);
       setMessages((prev) => [
         ...prev,
         {
-          content: "Sorry, I encountered an error. Please try again.",
+          content: `Error: ${error.message || "An unexpected error occurred. Please try again."}`,
           sender: "bot",
         },
       ]);

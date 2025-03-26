@@ -1,10 +1,11 @@
-// app/api/session/[sessionId]/messages/route.ts
-
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/app/lib/prisma';
 
-export async function GET(req: Request, { params }: { params: { sessionId: string } }) {
-  const { sessionId } = params;
+export async function GET(
+  req: NextRequest,
+  context: { params: { sessionId: string } }
+) {
+  const { sessionId } = context.params;
 
   if (!sessionId) {
     return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
@@ -28,7 +29,7 @@ export async function GET(req: Request, { params }: { params: { sessionId: strin
       },
     });
   } catch (err) {
-    console.error("Failed to load session messages:", err);
+    console.error("❌ Failed to load session messages:", err);
     return NextResponse.json({ error: 'Failed to fetch session messages' }, { status: 500 });
   }
 }
