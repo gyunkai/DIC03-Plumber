@@ -36,7 +36,7 @@ console.log("[Direct Listener] window.location.href:", window.location.href);
             Number.isInteger(pageNumber)
         ) {
             console.log("[Direct Listener] Scrolling to page:", pageNumber);
-            window.PDFViewerApplication.page = pageNumber;
+            window.PDFViewerApplication.pdfViewer.currentPageNumber = pageNumber;
         }
         }
     });
