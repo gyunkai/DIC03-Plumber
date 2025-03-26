@@ -12,9 +12,7 @@ export async function POST(req: NextRequest) {
     const session = await prisma.userSession.create({
       data: {
         userId,
-        pdfname,
-        sessionStartTime: new Date(),
-        conversationhistory: [],
+        pdfname
       },
     });
 
