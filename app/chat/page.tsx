@@ -360,7 +360,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: user.id,
-          pdfName: selectedPdf.split("/").pop(), // just filename
+          pdfname: selectedPdf.split("/").pop(), // just filename
         }),
       });
 
