@@ -49,3 +49,30 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json({ error: 'Registration failed, please try again later' }, { status: 500 });
   }
 };
+
+// NEW: Added professorLogin function to handle professor login using preset credentials.
+export const professorLogin = async (req: NextRequest) => {
+  try {
+    const body = await req.json();
+    const { email, password } = body;
+
+    // Check if the credentials match the professor's preset credentials
+    if (email === "professor@nyu.edu" && password === "8888") {
+      // Return success response with professor details
+      return NextResponse.json({
+        success: true,
+        message: "Professor login successful",
+        user: {
+          id: "professor",
+          email: "professor@nyu.edu",
+          name: "Professor"
+        }
+      }, { status: 200 });
+    } else {
+      return NextResponse.json({ error: "Invalid professor credentials" }, { status: 401 });
+    }
+  } catch (error) {
+    console.error('Professor login error:', error);
+    return NextResponse.json({ error: 'Professor login failed, please try again later' }, { status: 500 });
+  }
+};
