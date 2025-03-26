@@ -1,6 +1,6 @@
 import os
 import glob
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
@@ -298,7 +298,7 @@ def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/
 
 # Initialize Chat Model
 print("Initializing Chat Model...")
-llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4o")
+llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-4")
 
 # Create the prompt template
 prompt_template = PromptTemplate(
@@ -551,82 +551,112 @@ def generate_quiz_question(user_input, personalized_prompt, pdf_name, document_c
 
 @app.route("/query", methods=["POST"])
 def query():
-    data = request.get_json()
-    if not data or "query" not in data:
-        return jsonify({"error": "Missing 'query' in request."}), 400
-    print(data)
-    user_input = data["query"]
-    pdf_name = data.get("pdf_name")
-    quiz_mode = data.get("quiz_mode", False)
-    user_id = data.get("user_id", "anonymous")
-    user_name = data.get("user_name", "User")
-    user_email = data.get("user_email", "N/A")
-    pdf_url = data.get("pdf_url")
-    print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode} - URL: {pdf_url}")
+    try:
+        data = request.get_json()
+        if not data or "query" not in data:
+            return jsonify({"error": "Missing 'query' in request."}), 400
+        print(data)
+        user_input = data["query"]
+        pdf_name = data.get("pdf_name")
+        quiz_mode = data.get("quiz_mode", False)
+        user_id = data.get("user_id", "anonymous")
+        user_name = data.get("user_name", "User")
+        user_email = data.get("user_email", "N/A")
+        pdf_url = data.get("pdf_url")
+        print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode} - URL: {pdf_url}")
 
-    # Get user-specific memory and personalized prompt
-    user_data = get_user_memory(user_id, user_name, user_email)
-    memory = user_data["memory"]
-    personalized_prompt = user_data["personalized_prompt"]
+        # Get user-specific memory and personalized prompt
+        user_data = get_user_memory(user_id, user_name, user_email)
+        memory = user_data["memory"]
+        personalized_prompt = user_data["personalized_prompt"]
 
-    # Compute document context regardless of quiz mode
-    relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
-    if not relevant_chunks:
-        document_context = "No relevant context found."
-    else:
-        fallback_note = ""
-        if used_fallback:
-            fallback_note = (
-                "**Note:** No relevant content found in the current lecture. "
-                "The following information comes from other lectures.\n\n"
-            )
-        
-        # Format chunks with proper page references
-        formatted_chunks = []
-        for chunk in relevant_chunks:
-            page_number = chunk['metadata'].get('page', 'unknown')
-            pdf_source = chunk['metadata'].get('pdf_name', '')
-            content = chunk['content']
-            page_info = f"[Page {page_number}](page://{page_number})"
+        # Compute document context regardless of quiz mode
+        relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
+        if not relevant_chunks:
+            document_context = "No relevant context found."
+        else:
+            fallback_note = ""
             if used_fallback:
-                page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
-            formatted_chunks.append(f"{page_info}: {content}")
-        
-        document_context = fallback_note + "\n---\n".join(formatted_chunks)
+                fallback_note = (
+                    "**Note:** No relevant content found in the current lecture. "
+                    "The following information comes from other lectures.\n\n"
+                )
+            
+            # Format chunks with proper page references
+            formatted_chunks = []
+            for chunk in relevant_chunks:
+                page_number = chunk['metadata'].get('page', 'unknown')
+                pdf_source = chunk['metadata'].get('pdf_name', '')
+                content = chunk['content']
+                page_info = f"[Page {page_number}](page://{page_number})"
+                if used_fallback:
+                    page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
+                formatted_chunks.append(f"{page_info}: {content}")
+            
+            document_context = fallback_note + "\n---\n".join(formatted_chunks)
 
-    # Get user-specific memory and personalized prompt
-    user_data = get_user_memory(user_id, user_name, user_email)
-    memory = user_data["memory"]
-    personalized_prompt = user_data["personalized_prompt"]
+        def generate():
+            try:
+                if quiz_mode:
+                    # Use the quiz generation tool with context
+                    answer_text = generate_quiz_question(user_input, personalized_prompt, pdf_name, document_context)
+                    yield f"data: {json.dumps({'answer': answer_text})}\n\n"
+                else:
+                    chat_history_str = "\n".join(
+                        msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
+                    )
+                    final_prompt = (
+                        f"{personalized_prompt}\n\n"
+                        f"Pdf key: {pdf_url}\n\n"
+                        f"Document Context:\n{document_context}\n\n"
+                        f"Conversation History:\n{chat_history_str}\n\n"
+                        f"User: {user_input}\n"
+                        f"Assistant:"
+                    )
+                    
+                    # Use streaming for the LLM response
+                    response = llm.stream(final_prompt)
+                    full_answer = ""
+                    sentence_buffer = ""
+                    
+                    print("Starting streaming response...")
+                    for chunk in response:
+                        if chunk.content:
+                            print(f"Received chunk: '{chunk.content}'")
+                            sentence_buffer += chunk.content
+                            
+                            # Check if we have a complete sentence or meaningful chunk
+                            if (chunk.content.endswith('.') or 
+                                chunk.content.endswith('!') or 
+                                chunk.content.endswith('?') or 
+                                chunk.content.endswith('\n') or
+                                len(sentence_buffer) > 100):  # Send if buffer gets too large
+                                
+                                if sentence_buffer.strip():
+                                    print(f"Yielding sentence: '{sentence_buffer}'")
+                                    full_answer += sentence_buffer
+                                    yield f"data: {json.dumps({'answer': sentence_buffer})}\n\n"
+                                    sentence_buffer = ""
+                    
+                    # Send any remaining content
+                    if sentence_buffer.strip():
+                        print(f"Yielding final chunk: '{sentence_buffer}'")
+                        full_answer += sentence_buffer
+                        yield f"data: {json.dumps({'answer': sentence_buffer})}\n\n"
+                    
+                    print("Streaming complete. Final answer:", full_answer)
+                    # Save the conversation into memory and update user session in DB
+                    memory.chat_memory.add_user_message(user_input)
+                    memory.chat_memory.add_ai_message(full_answer)
+                    create_or_update_user_session(user_id, pdf_name, user_input, full_answer)
+            except Exception as e:
+                print(f"Error in generate function: {str(e)}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    # Build the final prompt based on quiz_mode flag
-    if quiz_mode:
-        # Use the quiz generation tool with context
-        answer_text = generate_quiz_question(user_input, personalized_prompt, pdf_name, document_context)
-    else:
-        chat_history_str = "\n".join(
-            msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
-        )
-        final_prompt = (
-            f"{personalized_prompt}\n\n"
-            f"Pdf key: {pdf_url}\n\n"
-            f"Document Context:\n{document_context}\n\n"
-            f"Conversation History:\n{chat_history_str}\n\n"
-            f"User: {user_input}\n"
-            f"Assistant:"
-        )
-        response = llm.invoke(final_prompt)
-        answer_text = response.content.strip()
-
-    print("LLM Answer:")
-    print(answer_text)
-
-    # Save the conversation into memory and update user session in DB
-    memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(answer_text)
-    create_or_update_user_session(user_id, pdf_name, user_input, answer_text)
-
-    return jsonify({"answer": answer_text})
+        return Response(generate(), mimetype='text/event-stream')
+    except Exception as e:
+        print(f"Error in query function: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 
