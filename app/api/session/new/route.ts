@@ -3,16 +3,16 @@ import prisma from "@/app/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, pdfName } = await req.json();
+    const { userId, pdfname } = await req.json();
 
-    if (!userId || !pdfName) {
-      return NextResponse.json({ error: "Missing userId or pdfName" }, { status: 400 });
+    if (!userId || !pdfname) {
+      return NextResponse.json({ error: "Missing userId or pdfname" }, { status: 400 });
     }
 
     const session = await prisma.userSession.create({
       data: {
         userId,
-        pdfname: pdfName,
+        pdfname,
         sessionStartTime: new Date(),
         conversationhistory: [],
       },

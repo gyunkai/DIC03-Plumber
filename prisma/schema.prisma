@@ -28,6 +28,8 @@ model UserSession {
   sessionStartTime        DateTime          @default(now())
   sessionEndTime          DateTime?
   researchNotesForSession Json?
+  pdfname                 String?           @db.Char
+  conversationhistory     Json?
   chatMessages            ChatMessage[]
   interactions            UserInteraction[]
   user                    User              @relation(fields: [userId], references: [id])
