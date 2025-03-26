@@ -13,6 +13,7 @@ model User {
   oauth         Boolean
   consent       Boolean?
   systemRole    String            @default("user")
+
   researchNotes Json?
   password      String?
   name          String
