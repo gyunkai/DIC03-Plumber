@@ -9,10 +9,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing userId or pdfname" }, { status: 400 });
     }
 
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Extract just the filename from the path if it contains slashes
+    const filename = pdfname.split('/').pop()?.split('\\').pop() || pdfname;
+
     const session = await prisma.userSession.create({
       data: {
         userId,
-        pdfname
+        pdfname: filename,
+        sessionStartTime: new Date(),
+        conversationhistory: [],
       },
     });
 
