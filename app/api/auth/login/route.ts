@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
                 { error: "Invalid email or password" },
                 { status: 401 }
             );
+            
         }
 
         // Verify password using bcrypt
