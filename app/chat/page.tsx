@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import MarkdownWithPageLinks from "@/components/MarkdownWithPageLinks";
+import AudioPlayer from "../../components/AudioPlayer";
+
 type Message = {
   id?: string;
   content: string;
@@ -1225,8 +1227,13 @@ export default function ChatPage() {
                               : "bg-gray-100 mr-auto"
                           }`}
                         >
-                          <div className="prose prose-sm">
-                            <MarkdownWithPageLinks content={message.content} />
+                          <div className="flex items-start gap-2">
+                            <div className="prose prose-sm flex-1">
+                              <MarkdownWithPageLinks content={message.content} />
+                            </div>
+                            {message.sender === "bot" && (
+                              <AudioPlayer text={message.content} />
+                            )}
                           </div>
                         </div>
                       ))}
