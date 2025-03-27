@@ -45,11 +45,14 @@ const nextConfig = {
     //   unoptimized: true,
     // },
 
-    // Configure webpack if needed
-    webpack: (config, { isServer }) => {
-        // Custom webpack config if needed
-        return config;
-    },
+    // Enable Turbo
+    experimental: {
+        turbo: {
+            rules: {
+                // Configure any specific Turbo rules here
+            }
+        }
+    }
 };
 
 module.exports = nextConfig;
