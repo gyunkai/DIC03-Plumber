@@ -7,140 +7,131 @@ datasource db {
   url      = env("DATABASE_URL3")
 }
 
-// oauthId refers to userId in the old version
 model User {
-  id        String   @id @default(uuid()) 
-  email     String   @unique
-  professor Boolean 
-  oauth    Boolean
-  consent  Boolean?
-  systemRole     String @default("user")
+  id            String            @id @default(uuid())
+  email         String            @unique
+  oauth         Boolean
+  consent       Boolean?
+  systemRole    String            @default("user")
+
   researchNotes Json?
-  sessions UserSession[]
-  interactions UserInteraction[]
-  enrollments      Enrollment[]
-  password  String?  
-  name    String   
-  chatMessages ChatMessage[]
+  password      String?
+  name          String
+  chatMessages  ChatMessage[]
+  enrollments   Enrollment[]
+  interactions  UserInteraction[]
+  sessions      UserSession[]
 }
 
 model UserSession {
-  id        String   @id @default(uuid()) 
-  userId    String
-  sessionStartTime DateTime @default(now())
-  sessionEndTime   DateTime?
-  pdfname                String
-  conversationhistory    Json?
-  
-  user      User     @relation(fields: [userId], references: [id])
-  interactions    UserInteraction[]
+  id                      String            @id @default(uuid())
+  userId                  String
+  sessionStartTime        DateTime          @default(now())
+  sessionEndTime          DateTime?
   researchNotesForSession Json?
-  chatMessages ChatMessage[]
+  pdfname                 String?
+  conversationhistory     Json?
+  chatMessages            ChatMessage[]
+  interactions            UserInteraction[]
+  user                    User              @relation(fields: [userId], references: [id])
 }
 
 model Session {
   id        String   @id
   sid       String   @unique
   data      String
-  expiresAt   DateTime
+  expiresAt DateTime
 }
 
 model UserInteraction {
-  id               String   @id @default(uuid()) 
-  userId           String
-  sessionId       String
-  timestamp        DateTime        @default(now())
-  actionName        String         @default("")
-  actions  Json[]
-  user             User     @relation(fields: [userId], references: [id])
-  session          UserSession  @relation(fields: [sessionId], references: [id])
+  id         String      @id @default(uuid())
+  userId     String
+  sessionId  String
+  timestamp  DateTime    @default(now())
+  actionName String      @default("")
+  actions    Json[]
+  session    UserSession @relation(fields: [sessionId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
 }
 
 model ChatMessage {
-  id          String   @id @default(uuid())
-  content     String
-  sender      String
-  timestamp   DateTime @default(now())
-  userId      String
-  sessionId   String?
-  pdfKey      String?
-  
-  user        User     @relation(fields: [userId], references: [id])
-  session     UserSession? @relation(fields: [sessionId], references: [id])
-  embedding   ChatEmbedding?
+  id        String         @id @default(uuid())
+  content   String
+  sender    String
+  timestamp DateTime       @default(now())
+  userId    String
+  sessionId String?
+  pdfKey    String?
+  embedding ChatEmbedding?
+  session   UserSession?   @relation(fields: [sessionId], references: [id])
+  user      User           @relation(fields: [userId], references: [id])
 }
 
 model ChatEmbedding {
-  id          String   @id @default(uuid())
-  messageId   String   @unique
-  embedding   Float[]
-  
-  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  id        String      @id @default(uuid())
+  messageId String      @unique
+  embedding Float[]
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
 model Class {
-  id             String          @id @default(uuid()) 
-  classMetadata  Json
-  createdDate    DateTime        @default(now())
-  materials      ClassMaterial[]
-  professorId      String
-  enrollments      Enrollment[]
-  pendingEnrollments PendingEnrollment[]    
+  id                 String              @id @default(uuid())
+  classMetadata      Json
+  createdDate        DateTime            @default(now())
+  professorId        String
+  materials          ClassMaterial[]
+  enrollments        Enrollment[]
+  pendingEnrollments PendingEnrollment[]
 }
 
 model Enrollment {
-  classId   String
-  userId    String
-  role      String
-
-  class     Class   @relation(fields: [classId], references: [id])
-  user      User    @relation(fields: [userId], references: [id])
+  classId String
+  userId  String
+  role    String
+  class   Class  @relation(fields: [classId], references: [id])
+  user    User   @relation(fields: [userId], references: [id])
 
   @@id([classId, userId])
 }
 
-// Status is the status of the pending enrollment, "not enrolled", "enrolled"
 model PendingEnrollment {
-  id        String   @id @default(uuid()) 
+  id        String @id @default(uuid())
   classId   String
-  userEmail    String
+  userEmail String
   role      String
-  status   String
-  class     Class   @relation(fields: [classId], references: [id])
+  status    String
+  class     Class  @relation(fields: [classId], references: [id])
 }
 
-// Status is the status of the material, ie. "waiting", "processing", "processed"
 model ClassMaterial {
-  id              String       @id @default(uuid()) 
-  classId         String
-  materialType    String
+  id               String     @id @default(uuid())
+  classId          String
+  materialType     String
   materialMetadata Json
-  materialContent String
-  status          String
-  uploadedDate    DateTime     @default(now())
-  availableDate   DateTime     @default("1970-01-01T00:00:00.000Z") // default to Unix epoch (0)
-  class           Class        @relation(fields: [classId], references: [id])
-  documents       Document[]
+  materialContent  String
+  status           String
+  uploadedDate     DateTime   @default(now())
+  availableDate    DateTime   @default(dbgenerated("'1970-01-01 00:00:00'::timestamp without time zone"))
+  class            Class      @relation(fields: [classId], references: [id])
+  documents        Document[]
 }
 
 model Document {
-  id           String   @id @default(uuid())
-  fileName     String
-  fileUrl      String
-  chunks       Json?
-
-  uploadedDate DateTime @default(now())
+  id              String         @id @default(uuid())
+  fileName        String
+  fileUrl         String
+  chunks          Json?
+  uploadedDate    DateTime       @default(now())
   classMaterialId String?
-
-  classMaterial ClassMaterial? @relation(fields: [classMaterialId], references: [id])
+  classMaterial   ClassMaterial? @relation(fields: [classMaterialId], references: [id])
 }
 
 model PdfChunk {
-  id          String   @id @default(uuid())
-  pdfName     String
-  content     String
-  pageNumber  Int
-  embedding   Unsupported("vector(1536)")
-  createdAt   DateTime @default(now())
+  id         String                @id @default(uuid())
+  pdfName    String
+  content    String
+  pageNumber Int
+  embedding  Unsupported("vector")
+  createdAt  DateTime              @default(now())
+  pdfPath    String?               @db.Char
 }
-

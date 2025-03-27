@@ -11,11 +11,13 @@ const scrollToPdfPage = (page: number) => {
   const iframe = document.getElementById("pdfjs-iframe") as HTMLIFrameElement;
   if (iframe && iframe.contentWindow) {
     console.log(`[Page Link] Sending scroll message to PDF iframe for page ${page}`);
+    // Notice we're sending `page` as the property
     iframe.contentWindow.postMessage({ type: "PDF_SCROLL_TO_PAGE", page }, "*");
   } else {
     console.warn("[Page Link] PDF iframe not found");
   }
 };
+
 
 const MarkdownWithPageLinks: React.FC<Props> = ({ content }) => {
   return (

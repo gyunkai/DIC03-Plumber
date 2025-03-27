@@ -3,16 +3,28 @@ import prisma from "@/app/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, pdfName } = await req.json();
+    const { userId, pdfname } = await req.json();
 
-    if (!userId || !pdfName) {
-      return NextResponse.json({ error: "Missing userId or pdfName" }, { status: 400 });
+    if (!userId || !pdfname) {
+      return NextResponse.json({ error: "Missing userId or pdfname" }, { status: 400 });
     }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Extract just the filename from the path if it contains slashes
+    const filename = pdfname.split('/').pop()?.split('\\').pop() || pdfname;
 
     const session = await prisma.userSession.create({
       data: {
         userId,
-        pdfname: pdfName,
+        pdfname: filename,
         sessionStartTime: new Date(),
         conversationhistory: [],
       },

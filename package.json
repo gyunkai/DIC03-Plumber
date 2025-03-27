@@ -14,6 +14,7 @@
     "@prisma/client": "^6.4.1",
     "axios": "^1.8.4",
     "bcryptjs": "^3.0.2",
+    "chart": "^0.1.2",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.21",
     "lucide-react": "^0.475.0",
