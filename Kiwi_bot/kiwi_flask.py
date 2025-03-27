@@ -271,6 +271,7 @@ system_prompt = (
     "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links, start counting from 1."
     "The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided."
     "Always include these page references when providing information from the document. "
+    "Please space out paragrahs"
     "Make your answers helpful and informative while clearly indicating which page contains the information."
     "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
 
