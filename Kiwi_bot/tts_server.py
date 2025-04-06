@@ -6,6 +6,8 @@ import openai
 import tempfile
 from typing import Optional
 import logging
+import glob
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,6 +16,13 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 env_path = find_dotenv()
 load_dotenv(env_path, override=True)
+
+# Constants
+MAX_AUDIO_FILES = 10
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio')
+
+# Ensure audio directory exists
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 app = Flask(__name__)
 # Configure CORS to allow requests from Next.js development server
@@ -34,6 +43,28 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # Available voices and models
 AVAILABLE_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 AVAILABLE_MODELS = ["tts-1", "tts-1-hd"]
+
+def manage_audio_files():
+    """Manage audio files to maintain the maximum limit"""
+    try:
+        # Get all audio files
+        audio_files = glob.glob(os.path.join(AUDIO_DIR, '*.mp3'))
+        
+        # If we're over the limit, remove the oldest files
+        if len(audio_files) >= MAX_AUDIO_FILES:
+            # Sort files by modification time (oldest first)
+            audio_files.sort(key=os.path.getmtime)
+            # Calculate how many files to remove
+            files_to_remove = len(audio_files) - MAX_AUDIO_FILES + 1
+            # Remove the oldest files
+            for file_path in audio_files[:files_to_remove]:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Removed old audio file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error removing old audio file {file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Error managing audio files: {e}")
 
 def text_to_speech(
     text: str,
@@ -133,6 +164,24 @@ def stream_speech():
         # Generate speech
         audio_data = text_to_speech(text, voice, model, speed)
         logger.info(f"Generated audio data size: {len(audio_data)} bytes")
+
+        # Save audio file for debugging
+        try:
+            # Manage existing audio files before saving new one
+            manage_audio_files()
+            
+            # Generate filename with timestamp
+            timestamp = int(time.time())
+            filename = f"tts_{timestamp}.mp3"
+            file_path = os.path.join(AUDIO_DIR, filename)
+            
+            # Save the audio file
+            with open(file_path, 'wb') as f:
+                f.write(audio_data)
+            logger.info(f"Saved audio file: {file_path}")
+        except Exception as e:
+            logger.error(f"Error saving audio file: {e}")
+            # Continue even if saving fails
 
         # Create a response with the audio data
         response = Response(

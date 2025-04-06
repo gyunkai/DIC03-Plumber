@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Loader2 } from 'lucide-react';
 
 interface AudioPlayerProps {
   text: string;
@@ -8,12 +8,17 @@ interface AudioPlayerProps {
 
 export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<'HIT' | 'MISS' | null>(null);
 
   const playText = async () => {
     try {
       setError(null);
+      setIsLoading(true);
+      setCacheStatus(null);
+
       // If already playing, stop the current audio
       if (audio) {
         audio.pause();
@@ -39,6 +44,10 @@ export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) 
           speed: 1.0
         })
       });
+
+      // Check cache status from response header
+      const cacheHeader = response.headers.get('X-Cache');
+      setCacheStatus(cacheHeader as 'HIT' | 'MISS' | null);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -81,6 +90,8 @@ export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) 
       console.error('Error playing audio:', error);
       setIsPlaying(false);
       setError(error instanceof Error ? error.message : 'Failed to play audio');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -96,10 +107,15 @@ export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) 
     <div className="relative">
       <button
         onClick={isPlaying ? stopPlaying : playText}
-        className={`p-2 rounded-full hover:bg-gray-200 transition-colors ${className}`}
+        disabled={isLoading}
+        className={`p-2 rounded-full hover:bg-gray-200 transition-colors ${className} ${
+          isLoading ? 'cursor-wait' : ''
+        }`}
         aria-label={isPlaying ? 'Stop playing' : 'Play message'}
       >
-        {isPlaying ? (
+        {isLoading ? (
+          <Loader2 className="h-4 w-4 text-gray-600 animate-spin" />
+        ) : isPlaying ? (
           <VolumeX className="h-4 w-4 text-gray-600" />
         ) : (
           <Volume2 className="h-4 w-4 text-gray-600" />
@@ -108,6 +124,11 @@ export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) 
       {error && (
         <div className="absolute top-full left-0 mt-1 bg-red-100 text-red-700 text-xs p-1 rounded whitespace-nowrap">
           {error}
+        </div>
+      )}
+      {cacheStatus && (
+        <div className="absolute top-full left-0 mt-1 bg-blue-100 text-blue-700 text-xs p-1 rounded whitespace-nowrap">
+          {cacheStatus === 'HIT' ? 'Playing from cache' : 'Generating new audio'}
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 // Ensure the audio directory exists
 const AUDIO_DIR = path.join(process.cwd(), 'public', 'audio');
@@ -9,10 +10,36 @@ if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
 }
 
+// Simple in-memory cache for audio responses
+const audioCache = new Map<string, Buffer>();
+
+// Generate a cache key from the request parameters
+function generateCacheKey(text: string, voice: string, model: string, speed: number): string {
+  const hash = crypto.createHash('md5');
+  hash.update(`${text}-${voice}-${model}-${speed}`);
+  return hash.digest('hex');
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { text, voice = 'alloy', model = 'tts-1', speed = 1.0 } = body;
+
+    // Generate cache key
+    const cacheKey = generateCacheKey(text, voice, model, speed);
+    
+    // Check cache first
+    const cachedAudio = audioCache.get(cacheKey);
+    if (cachedAudio) {
+      console.log('Returning cached audio response');
+      return new NextResponse(cachedAudio, {
+        headers: {
+          'Content-Type': 'audio/mpeg',
+          'Cache-Control': 'no-cache',
+          'X-Cache': 'HIT',
+        },
+      });
+    }
 
     console.log('Starting TTS request with text length:', text.length);
 
@@ -53,6 +80,9 @@ export async function POST(request: Request) {
         );
       }
 
+      // Cache the audio response
+      audioCache.set(cacheKey, buffer);
+
       // Save the audio file locally for debugging
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `tts-${timestamp}.mp3`;
@@ -71,6 +101,7 @@ export async function POST(request: Request) {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Cache-Control': 'no-cache',
+          'X-Cache': 'MISS',
         },
       });
 
