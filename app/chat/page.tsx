@@ -11,16 +11,22 @@ import {
   FileText,
   BookOpen,
   Menu,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import MarkdownWithPageLinks from "@/components/MarkdownWithPageLinks";
 import AudioPlayer from "../../components/AudioPlayer";
+import GeneratedImage from "@/components/GeneratedImage";
 
 type Message = {
   id?: string;
   content: string;
   sender: "user" | "bot";
   timestamp?: Date;
+  image?: {
+    url: string;
+    prompt: string;
+  };
 };
 
 type PdfFile = {
@@ -386,91 +392,130 @@ export default function ChatPage() {
     setSendingMessage(true);
 
     try {
-      const saveResponse = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: userMessage.content,
-          sender: userMessage.sender,
-          pdfKey: selectedPdf,
-        }),
-      });
-      if (!saveResponse.ok) {
-        console.error("Failed to save user message");
-      }
+      // Check if the message is requesting an image
+      const isImageRequest = input.toLowerCase().includes("generate an image") || 
+                            input.toLowerCase().includes("show me an image") ||
+                            input.toLowerCase().includes("create an image");
 
-      // Create a new bot message placeholder
-      const botMessage: Message = {
-        content: "",
-        sender: "bot",
-      };
-      setMessages((prev) => [...prev, botMessage]);
+      if (isImageRequest) {
+        // Generate image using context
+        const response = await fetch("/api/image/context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: input,
+            pdfName: selectedPdf,
+            userId: user?.id,
+            userName: user?.name,
+            userEmail: user?.email,
+          }),
+        });
 
-      // Send the message to the streaming endpoint
-      const response = await fetch("/api/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage.content,
-          pdfUrl: pdfUrl,
-          pdfName: selectedPdf,
-          userId: user?.id,
-          userName: user?.name,
-          userEmail: user?.email,
-        }),
-      });
+        if (!response.ok) {
+          throw new Error("Failed to generate image");
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to get bot response");
-      }
+        const data = await response.json();
+        
+        // Add image message to chat
+        const imageMessage: Message = {
+          content: "Here's the generated image based on our conversation:",
+          sender: "bot",
+          image: {
+            url: data.url,
+            prompt: data.prompt,
+          },
+        };
+        
+        setMessages((prev) => [...prev, imageMessage]);
+      } else {
+        // Regular chat message handling
+        const saveResponse = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: userMessage.content,
+            sender: userMessage.sender,
+            pdfKey: selectedPdf,
+          }),
+        });
+        if (!saveResponse.ok) {
+          console.error("Failed to save user message");
+        }
 
-      // Create a reader for the response stream
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Failed to get response reader");
-      }
+        // Create a new bot message placeholder
+        const botMessage: Message = {
+          content: "",
+          sender: "bot",
+        };
+        setMessages((prev) => [...prev, botMessage]);
 
-      // Create a buffer to store the complete message
-      let buffer = "";
-      let lastMessageContent = "";
+        // Send the message to the streaming endpoint
+        const response = await fetch("/api/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: userMessage.content,
+            pdfUrl: pdfUrl,
+            pdfName: selectedPdf,
+            userId: user?.id,
+            userName: user?.name,
+            userEmail: user?.email,
+          }),
+        });
 
-      // Read the stream
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to get bot response");
+        }
 
-        // Convert the chunk to text
-        const text = new TextDecoder().decode(value);
-        buffer += text;
+        // Create a reader for the response stream
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("Failed to get response reader");
+        }
 
-        // Process complete SSE messages
-        const messages = buffer.split('\n\n');
-        // Keep the last incomplete message in the buffer
-        buffer = messages.pop() || "";
+        // Create a buffer to store the complete message
+        let buffer = "";
+        let lastMessageContent = "";
 
-        for (const message of messages) {
-          if (message.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(message.slice(6));
-              if (data.error) {
-                throw new Error(data.error);
+        // Read the stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Convert the chunk to text
+          const text = new TextDecoder().decode(value);
+          buffer += text;
+
+          // Process complete SSE messages
+          const messages = buffer.split('\n\n');
+          // Keep the last incomplete message in the buffer
+          buffer = messages.pop() || "";
+
+          for (const message of messages) {
+            if (message.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(message.slice(6));
+                if (data.error) {
+                  throw new Error(data.error);
+                }
+                if (data.answer) {
+                  lastMessageContent += data.answer;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage.sender === "bot") {
+                      lastMessage.content = lastMessageContent;
+                      return newMessages;
+                    }
+                    return prev;
+                  });
+                }
+              } catch (error) {
+                console.error("Error parsing streaming data:", error);
+                throw error;
               }
-              if (data.answer) {
-                lastMessageContent += data.answer;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  if (lastMessage.sender === "bot") {
-                    lastMessage.content = lastMessageContent;
-                    return newMessages;
-                  }
-                  return prev;
-                });
-              }
-            } catch (error) {
-              console.error("Error parsing streaming data:", error);
-              throw error;
             }
           }
         }
@@ -1230,8 +1275,17 @@ export default function ChatPage() {
                           <div className="flex items-start gap-2">
                             <div className="prose prose-sm flex-1">
                               <MarkdownWithPageLinks content={message.content} />
+                              {message.image && (
+                                <div className="mt-2">
+                                  <GeneratedImage
+                                    url={message.image.url}
+                                    prompt={message.image.prompt}
+                                    className="max-w-md"
+                                  />
+                                </div>
+                              )}
                             </div>
-                            {message.sender === "bot" && (
+                            {message.sender === "bot" && !message.image && (
                               <AudioPlayer text={message.content} />
                             )}
                           </div>
