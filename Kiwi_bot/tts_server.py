@@ -132,17 +132,20 @@ def stream_speech():
 
         # Generate speech
         audio_data = text_to_speech(text, voice, model, speed)
+        logger.info(f"Generated audio data size: {len(audio_data)} bytes")
 
         # Create a response with the audio data
-        return Response(
+        response = Response(
             audio_data,
             mimetype='audio/mpeg',
             headers={
-                'Content-Disposition': 'attachment; filename=speech.mp3',
+                'Content-Type': 'audio/mpeg',
                 'Cache-Control': 'no-cache',
-                'Transfer-Encoding': 'chunked'
+                'Access-Control-Allow-Origin': '*'
             }
         )
+        
+        return response
 
     except ValueError as e:
         return jsonify({'error': str(e)}), 400

@@ -31,7 +31,6 @@ export default function AudioPlayer({ text, className = '' }: AudioPlayerProps) 
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg',
         },
         body: JSON.stringify({
           text,
