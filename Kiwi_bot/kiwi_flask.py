@@ -23,6 +23,53 @@ import tempfile
 from flask_cors import CORS
 import logging
 
+# System prompt for the bot
+SYSTEM_PROMPT = """You are Kiwi, an AI assistant specialized in helping students with their academic studies. 
+You have access to the following tools and capabilities:
+
+1. Text-to-Speech (TTS):
+   - You can generate speech from text using different voices and models
+   - Available voices: alloy, echo, fable, onyx, nova, shimmer
+   - Available models: tts-1, tts-1-hd
+   - Speed can be adjusted from 0.25 to 4.0
+
+2. Image Generation:
+   - You can generate images using DALL-E 3
+   - Available sizes: 1024x1024, 1792x1024, 1024x1792
+   - Available qualities: standard, hd
+   - Available styles: natural, vivid
+   - Images are generated based on the conversation context and user's request
+
+When a user requests an image, you should:
+1. Understand the context from the conversation
+2. Generate a detailed prompt that captures the user's request
+3. Use the appropriate size, quality, and style based on the request
+4. Return the generated image URL and prompt
+
+For example, if a user asks "generate an image of a neural network", you should:
+1. Consider any previous context about neural networks from the conversation
+2. Create a detailed prompt like "A detailed illustration of a neural network with interconnected nodes and layers, showing data flow and activation patterns, in a modern scientific style"
+3. Use appropriate parameters (e.g., standard quality, natural style)
+4. Return the image URL and the prompt used
+
+Remember to:
+- Always consider the conversation context when generating images
+- Create detailed, specific prompts for better results
+- Use appropriate parameters based on the request
+- Be creative but stay within academic and professional boundaries
+
+Your primary goal is to help students understand complex concepts through both text and visual explanations.
+
+Always remember personal details provided by the user, especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. 
+Here you are tasked with answering questions based on the document provided which is for the course which will be provided with. 
+Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. 
+For each answer, cite your sources from the pages using the format add 1 to the page number [Page X](page://X) — this will be converted into clickable links, start counting from 1.
+The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided.
+Always include these page references when providing information from the document. 
+Please space out paragraphs.
+Make your answers helpful and informative while clearly indicating which page contains the information.
+If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."""
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +89,13 @@ print("DATABASE_URL3:", os.getenv("DATABASE_URL3"))
 # Force set environment variables
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 os.environ["DATABASE_URL3"] = os.getenv("DATABASE_URL3")
+
+# Initialize OpenAI client with explicit API key
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    logger.error("OpenAI API key is not set in environment variables")
+else:
+    logger.info("OpenAI API key is set and ready to use")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -625,6 +679,7 @@ def query():
                         msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
                     )
                     final_prompt = (
+                        f"{SYSTEM_PROMPT}\n\n"  # Add system prompt
                         f"{personalized_prompt}\n\n"
                         f"Pdf key: {pdf_url}\n\n"
                         f"Document Context:\n{document_context}\n\n"
@@ -1026,6 +1081,13 @@ def generate_image(
         str: URL of the generated image
     """
     try:
+        # Log API key status
+        if not openai.api_key:
+            logger.error("OpenAI API key is not set in generate_image function")
+            raise ValueError("OpenAI API key is not set")
+        else:
+            logger.info("OpenAI API key is set in generate_image function")
+
         # Validate inputs
         valid_sizes = ["1024x1024", "1792x1024", "1024x1792"]
         if size not in valid_sizes:
@@ -1039,6 +1101,8 @@ def generate_image(
 
         logger.info(f"Generating image for prompt: {prompt} with size: {size}, quality: {quality}, style: {style}")
         
+        # Generate the image
+        logger.info("Making API call to OpenAI DALL-E...")
         response = openai.images.generate(
             model="dall-e-3",
             prompt=prompt,
@@ -1048,11 +1112,29 @@ def generate_image(
             n=1
         )
         
+        # Check if response is valid
+        if not response:
+            logger.error("No response received from OpenAI API")
+            raise ValueError("No response received from OpenAI API")
+            
+        if not response.data:
+            logger.error("No data in OpenAI API response")
+            raise ValueError("No data in OpenAI API response")
+            
+        if len(response.data) == 0:
+            logger.error("Empty data array in OpenAI API response")
+            raise ValueError("Empty data array in OpenAI API response")
+            
         image_url = response.data[0].url
-        logger.info("Image generation successful")
+        logger.info(f"Image generation successful. URL: {image_url}")
+        
         return image_url
+        
+    except openai.error.OpenAIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        raise
     except Exception as e:
-        logger.error(f"Error in generate_image: {e}")
+        logger.error(f"Error in generate_image: {str(e)}")
         raise
 
 @app.route('/tts', methods=['POST'])
@@ -1232,8 +1314,10 @@ def health_check():
 def generate_image_from_context():
     """Generate an image based on conversation context and query"""
     try:
+        logger.info("Received image generation request")
         data = request.get_json()
         if not data or "query" not in data:
+            logger.error("Missing query in request")
             return jsonify({"error": "Missing 'query' in request."}), 400
 
         user_input = data["query"]
@@ -1241,6 +1325,8 @@ def generate_image_from_context():
         user_id = data.get("user_id", "anonymous")
         user_name = data.get("user_name", "User")
         user_email = data.get("user_email", "N/A")
+
+        logger.info(f"Processing image request for user {user_id} ({user_name})")
 
         # Get user-specific memory and personalized prompt
         user_data = get_user_memory(user_id, user_name, user_email)
@@ -1251,6 +1337,7 @@ def generate_image_from_context():
         relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
         if not relevant_chunks:
             document_context = "No relevant context found."
+            logger.warning("No relevant chunks found for image generation")
         else:
             fallback_note = ""
             if used_fallback:
@@ -1293,6 +1380,8 @@ Create a detailed, vivid description for an image that would help illustrate or 
 The description should be specific and detailed, focusing on visual elements that would make the image informative and engaging.
 """
 
+        logger.info(f"Generated image prompt: {image_prompt}")
+
         # Generate image using the context-aware prompt
         try:
             # Get image parameters from request or use defaults
@@ -1300,8 +1389,11 @@ The description should be specific and detailed, focusing on visual elements tha
             quality = data.get('quality', 'standard')
             style = data.get('style', 'vivid')
 
+            logger.info(f"Generating image with parameters: size={size}, quality={quality}, style={style}")
+
             # Generate the image
             image_url = generate_image(image_prompt, size, quality, style)
+            logger.info(f"Successfully generated image: {image_url}")
 
             # Save image reference
             try:
@@ -1320,13 +1412,17 @@ The description should be specific and detailed, focusing on visual elements tha
             except Exception as e:
                 logger.error(f"Error saving image reference: {e}")
 
-            return jsonify({
+            # Return the image URL and details
+            response_data = {
                 'url': image_url,
                 'prompt': image_prompt,
                 'size': size,
                 'quality': quality,
                 'style': style
-            })
+            }
+            
+            logger.info(f"Sending response: {response_data}")
+            return jsonify(response_data)
 
         except Exception as e:
             logger.error(f"Error generating image: {e}")
@@ -1337,5 +1433,5 @@ The description should be specific and detailed, focusing on visual elements tha
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('FLASK_PORT', 5002))
+    port = int(os.getenv('FLASK_PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)

@@ -412,10 +412,12 @@ export default function ChatPage() {
         });
 
         if (!response.ok) {
-          throw new Error("Failed to generate image");
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to generate image");
         }
 
         const data = await response.json();
+        console.log("Image generation response:", data); // Add this for debugging
         
         // Add image message to chat
         const imageMessage: Message = {
