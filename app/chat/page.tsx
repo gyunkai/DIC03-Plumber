@@ -682,8 +682,7 @@ export default function ChatPage() {
             .then((response) => {
               // Log response status (English)
               console.log(
-                `[PDF Backend] Server responded with status: ${
-                  response.status
+                `[PDF Backend] Server responded with status: ${response.status
                 } ${response.ok ? "(Success)" : "(Failed)"}`
               );
               return response.json();
@@ -835,18 +834,16 @@ export default function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <div
-          className={`bg-gray-50 transition-all duration-300 ${
-            isSidebarOpen ? "w-64" : "w-0"
-          } overflow-hidden`}
+          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
+            } overflow-hidden`}
         >
           <div className="p-4">
             <h2 className="text-lg font-bold mb-4">Current Courses</h2>
             <ul className="mb-6">
               <li
                 onClick={() => handleCourseSelect("machine-learning")}
-                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                  selectedCourse === "machine-learning" ? "bg-blue-100" : ""
-                } flex items-center justify-between`}
+                className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === "machine-learning" ? "bg-blue-100" : ""
+                  } flex items-center justify-between`}
               >
                 <span>Machine Learning</span>
                 <BookOpen className="h-4 w-4 text-gray-500" />
@@ -859,9 +856,8 @@ export default function ChatPage() {
                 <li
                   key={index}
                   onClick={() => handleCourseSelect(course.id)}
-                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                    selectedCourse === course.id ? "bg-blue-100" : ""
-                  } flex items-center justify-between`}
+                  className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedCourse === course.id ? "bg-blue-100" : ""
+                    } flex items-center justify-between`}
                 >
                   <span>{course.name}</span>
                   <BookOpen className="h-4 w-4 text-gray-500" />
@@ -876,9 +872,8 @@ export default function ChatPage() {
                   <li
                     key={index}
                     onClick={() => setSelectedPdf(pdf.key)}
-                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${
-                      selectedPdf === pdf.key ? "bg-blue-100" : ""
-                    } flex items-center`}
+                    className={`p-2 mb-2 cursor-pointer rounded hover:bg-blue-50 ${selectedPdf === pdf.key ? "bg-blue-100" : ""
+                      } flex items-center`}
                   >
                     <FileText className="h-4 w-4 mr-2 text-gray-500" />
                     {pdf.name}
@@ -1010,9 +1005,8 @@ export default function ChatPage() {
                       )}
                     </div>
                     <svg
-                      className={`w-5 h-5 transition-transform duration-200 ${
-                        showQuizSettings ? "rotate-180" : ""
-                      }`}
+                      className={`w-5 h-5 transition-transform duration-200 ${showQuizSettings ? "rotate-180" : ""
+                        }`}
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -1070,10 +1064,9 @@ export default function ChatPage() {
                                   )
                                 }
                                 className={`py-1.5 px-2 rounded-md capitalize text-sm text-center
-                                  ${
-                                    quizDifficulty === level
-                                      ? "bg-blue-600 text-white font-medium"
-                                      : "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
+                                  ${quizDifficulty === level
+                                    ? "bg-blue-600 text-white font-medium"
+                                    : "bg-gray-50 border border-gray-300 text-gray-700 hover:bg-gray-100"
                                   } transition-colors`}
                               >
                                 {level}
@@ -1156,11 +1149,10 @@ export default function ChatPage() {
                     {quizFeedback.answer && (
                       <div className="mt-4 rounded-lg border border-gray-200 mb-4 overflow-hidden">
                         <div
-                          className={`p-3 ${
-                            quizFeedback.isCorrect
+                          className={`p-3 ${quizFeedback.isCorrect
                               ? "bg-green-100 text-green-800"
                               : "bg-red-100 text-red-800"
-                          } font-medium`}
+                            } font-medium`}
                         >
                           {quizFeedback.isCorrect ? "Correct!" : "Incorrect!"}
                         </div>
@@ -1181,11 +1173,10 @@ export default function ChatPage() {
                       <button
                         onClick={handlePreviousQuestion}
                         disabled={currentQuestionIndex === 0}
-                        className={`px-4 py-2 rounded-md ${
-                          currentQuestionIndex === 0
+                        className={`px-4 py-2 rounded-md ${currentQuestionIndex === 0
                             ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                             : "bg-blue-600 text-white hover:bg-blue-700"
-                        } transition-colors`}
+                          } transition-colors`}
                       >
                         Previous
                       </button>
@@ -1194,11 +1185,10 @@ export default function ChatPage() {
                         disabled={
                           currentQuestionIndex === quizQuestions.length - 1
                         }
-                        className={`px-4 py-2 rounded-md ${
-                          currentQuestionIndex === quizQuestions.length - 1
+                        className={`px-4 py-2 rounded-md ${currentQuestionIndex === quizQuestions.length - 1
                             ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                             : "bg-blue-600 text-white hover:bg-blue-700"
-                        } transition-colors`}
+                          } transition-colors`}
                       >
                         Next
                       </button>
@@ -1219,11 +1209,10 @@ export default function ChatPage() {
                       {messages.map((message, index) => (
                         <div
                           key={message.id || index}
-                          className={`mb-3 p-3 rounded max-w-[90%] ${
-                            message.sender === "user"
+                          className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
                               ? "bg-blue-100 ml-auto"
                               : "bg-gray-100 mr-auto"
-                          }`}
+                            }`}
                         >
                           <div className="prose prose-sm">
                             <MarkdownWithPageLinks content={message.content} />

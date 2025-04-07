@@ -45,11 +45,13 @@ const nextConfig = {
     //   unoptimized: true,
     // },
 
-    // Enable Turbo
+    // Enable Turbopack
     experimental: {
         turbo: {
+            // Add custom Turbo rules if needed
             rules: {
-                // Configure any specific Turbo rules here
+                // Example: specify how to handle specific file types
+                // '*.{js,jsx,ts,tsx}': ['eslint --fix']
             }
         }
     }

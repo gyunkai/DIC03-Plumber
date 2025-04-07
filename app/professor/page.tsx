@@ -11,9 +11,19 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+
+// Define User interface
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 type AggregatedInsights = {
   bulletPoints: string[];
@@ -149,6 +159,51 @@ function Modal({
 export default function ProfessorDashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [selectedSummary, setSelectedSummary] = useState<AnonymousSummary | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Get token from cookie
+    const getCookie = (name: string) => {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
+      return null;
+    };
+
+    const token = getCookie('authToken');
+
+    if (!token) {
+      // If no token, redirect to login page
+      router.push('/login');
+      return;
+    }
+
+    // Parse token to get user info
+    try {
+      // Simple JWT payload parsing (without signature validation)
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setUser({
+        id: payload.id,
+        name: payload.name,
+        email: payload.email,
+        role: payload.role
+      });
+    } catch (error) {
+      console.error('Failed to parse token:', error);
+      router.push('/login');
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  const handleLogout = () => {
+    // Clear cookie
+    document.cookie = 'authToken=; path=/; max-age=0';
+    // Redirect to login page
+    router.push('/login');
+  };
 
   useEffect(() => {
     // Simulate API call
@@ -158,6 +213,14 @@ export default function ProfessorDashboard() {
 
     return () => clearTimeout(timer);
   }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   if (!dashboardData) {
     return (
@@ -190,12 +253,27 @@ export default function ProfessorDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-50 p-6">
-      {/* Header */}
-      <header className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-800">Professor Dashboard</h1>
-        <p className="mt-2 text-gray-600">
-          A comprehensive view of student interactions and learning insights in our math-intensive machine learning class.
-        </p>
+      {/* Header with user info and logout */}
+      <header className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-800">Professor Dashboard</h1>
+          <p className="mt-2 text-gray-600">
+            A comprehensive view of student interactions and learning insights
+          </p>
+        </div>
+        <div className="flex items-center">
+          {user && (
+            <span className="text-gray-700 mr-4">
+              Welcome, {user.name} ({user.email})
+            </span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       {/* Aggregated Insights */}
@@ -262,6 +340,45 @@ export default function ProfessorDashboard() {
               </button>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Admin Functions */}
+      <section className="mt-12">
+        <h2 className="text-3xl font-semibold text-gray-800 mb-6">Admin Functions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+            <h3 className="text-xl font-medium text-gray-700 mb-2">User Management</h3>
+            <p className="text-gray-600 mb-4">Manage users and permissions</p>
+            <Link
+              href="/professor/users"
+              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Manage Users
+            </Link>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+            <h3 className="text-xl font-medium text-gray-700 mb-2">Course Management</h3>
+            <p className="text-gray-600 mb-4">Create and manage courses</p>
+            <Link
+              href="/professor/courses"
+              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Manage Courses
+            </Link>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+            <h3 className="text-xl font-medium text-gray-700 mb-2">System Settings</h3>
+            <p className="text-gray-600 mb-4">Configure system settings</p>
+            <Link
+              href="/professor/settings"
+              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              System Settings
+            </Link>
+          </div>
         </div>
       </section>
 

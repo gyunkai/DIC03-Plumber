@@ -61,13 +61,13 @@ const Login = () => {
     setError("");
     setLoading(true);
     try {
-      // Call login API with professor credentials
-      const response = await fetch("/api/auth/login", {
+      // Call professor login API with current credentials
+      const response = await fetch("/api/professor-login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        //body: JSON.stringify({ email: "professor@nyu.edu", password: "8888" }),
+
         body: JSON.stringify({ email, password }),
       });
 
@@ -75,6 +75,11 @@ const Login = () => {
 
       if (!response.ok) {
         throw new Error(data.error || "Professor login failed");
+      }
+
+      // Set the auth token in cookie
+      if (data.token) {
+        document.cookie = `authToken=${data.token}; path=/; max-age=${60 * 60 * 8}`; // 8 hours
       }
 
       // Redirect to the professor page if login is successful.
@@ -184,10 +189,13 @@ const Login = () => {
           <button
             onClick={handleProfessorLogin}
             disabled={loading}
-            className="w-full py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors disabled:bg-green-400"
+            className="w-full py-3 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 transition-colors disabled:bg-purple-400"
           >
             {loading ? "Processing..." : "Professor Login"}
           </button>
+          <p className="text-xs text-gray-500 mt-1 text-center">
+            For administrators only. Requires admin credentials.
+          </p>
         </div>
 
         <div className="mt-6 text-center">
