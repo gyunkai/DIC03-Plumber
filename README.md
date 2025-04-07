@@ -149,5 +149,5 @@ By integrating structured navigation, AI-powered learning enhancements, adaptive
 
 ---
 
-![Tech Stack Diagram](DIC tech stack.drawio (2).png)
+![Tech Stack Diagram](DIC_tech_stack.png)
 
