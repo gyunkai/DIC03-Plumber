@@ -56,7 +56,14 @@ export async function POST(req: NextRequest) {
                 }
             });
         } catch (kiwiBotError) {
-            console.error("Error connecting to Kiwi Bot:", kiwiBotError.message);
+            // Add type check for the error object
+            let errorMessage = "An unknown error occurred while connecting to Kiwi Bot";
+            if (kiwiBotError instanceof Error) {
+                errorMessage = kiwiBotError.message;
+            } else if (typeof kiwiBotError === 'string') {
+                errorMessage = kiwiBotError;
+            }
+            console.error("Error connecting to Kiwi Bot:", errorMessage);
 
             // Return a more specific error message
             return NextResponse.json({

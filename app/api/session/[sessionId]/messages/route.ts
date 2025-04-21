@@ -3,7 +3,7 @@ import prisma from '@/app/lib/prisma';
 
 export async function GET(
   req: NextRequest,
-  context: { params: { sessionId: string } }
+  context: any
 ) {
   const { sessionId } = context.params;
 

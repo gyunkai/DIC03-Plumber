@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPdfFromS3 } from "@/app/utils/s3";
 
-interface Params {
-    params: {
-        key: string[]
-    }
-}
-
 export async function GET(
     request: NextRequest,
-    context: Params
+    context: any
 ) {
     try {
         // Ensure params is properly awaited by using context
