@@ -18,7 +18,7 @@ const classes: ClassInfo[] = [
   { title: "Introduction to Computer and Data Science", code: "CSCI-SHU 101" },
   { title: "Data Structures", code: "CSCI-SHU 210" },
   { title: "Algorithms", code: "CSCI-SHU 220" },
-  { title: "Computer Architecture", code: "CENG-SHU 201" },
+  { title: "Machine Learning", code: "CSCI-SHU 360" },
   { title: "Operating Systems", code: "CSCI-SHU 370" },
 ];
 
