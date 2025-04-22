@@ -13,7 +13,6 @@ model User {
   oauth         Boolean
   consent       Boolean?
   systemRole    String            @default("user")
-
   researchNotes Json?
   password      String?
   name          String
@@ -133,5 +132,5 @@ model PdfChunk {
   pageNumber Int
   embedding  Unsupported("vector")
   createdAt  DateTime              @default(now())
-  pdfPath    String?               @db.Char
+  pdfPath    String?
 }

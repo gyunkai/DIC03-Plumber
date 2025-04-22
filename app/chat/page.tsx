@@ -55,6 +55,7 @@ export default function ChatPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [userLoading, setUserLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [currentPageNumber, setCurrentPageNumber] = useState<number>(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [selectedCourse, setSelectedCourse] = useState<string | null>(
@@ -384,20 +385,30 @@ export default function ChatPage() {
     }
   };
 
+  // 添加监视currentPageNumber变化的useEffect
+  useEffect(() => {
+    console.log("currentPageNumber状态已更新:", currentPageNumber);
+  }, [currentPageNumber]);
+
   const handleSendMessage = async () => {
+    console.log("🚀 开始执行handleSendMessage函数");
+    console.log("📄 当前页码状态:", currentPageNumber, typeof currentPageNumber);
     if (input.trim() === "" || sendingMessage) return;
+    console.log("输入有效，继续执行");
+
     const userMessage: Message = { content: input, sender: "user" };
     setMessages([...messages, userMessage]);
     setInput("");
     setSendingMessage(true);
+    console.log("设置用户消息状态完成");
 
     try {
-      // Check if the message is requesting an image
-      const isImageRequest = input.toLowerCase().includes("generate an image") || 
-                            input.toLowerCase().includes("show me an image") ||
-                            input.toLowerCase().includes("create an image");
+      // 检查是否为图片请求，简化判断逻辑
+      const isImageRequest = input.toLowerCase().includes("image");
+      console.log("是否为图片请求:", isImageRequest);
 
       if (isImageRequest) {
+        console.log("处理图片请求...");
         // Generate image using context
         const response = await fetch("/api/image/context", {
           method: "POST",
@@ -408,6 +419,7 @@ export default function ChatPage() {
             userId: user?.id,
             userName: user?.name,
             userEmail: user?.email,
+            pageNumber: currentPageNumber,
           }),
         });
 
@@ -418,7 +430,7 @@ export default function ChatPage() {
 
         const data = await response.json();
         console.log("Image generation response:", data); // Add this for debugging
-        
+
         // Add image message to chat
         const imageMessage: Message = {
           content: "Here's the generated image based on our conversation:",
@@ -428,9 +440,10 @@ export default function ChatPage() {
             prompt: data.prompt,
           },
         };
-        
+
         setMessages((prev) => [...prev, imageMessage]);
       } else {
+        console.log("处理普通聊天请求...");
         // Regular chat message handling
         const saveResponse = await fetch("/api/chat/messages", {
           method: "POST",
@@ -444,6 +457,7 @@ export default function ChatPage() {
         if (!saveResponse.ok) {
           console.error("Failed to save user message");
         }
+        console.log("用户消息已保存");
 
         // Create a new bot message placeholder
         const botMessage: Message = {
@@ -451,20 +465,29 @@ export default function ChatPage() {
           sender: "bot",
         };
         setMessages((prev) => [...prev, botMessage]);
+        console.log("添加机器人消息占位符");
 
         // Send the message to the streaming endpoint
+        const requestData = {
+          message: userMessage.content,
+          pdfUrl: pdfUrl,
+          pdfName: selectedPdf,
+          userId: user?.id,
+          userName: user?.name,
+          userEmail: user?.email,
+          pageNumber: Number(currentPageNumber),
+        };
+
+        // 查看发送到后端的数据格式
+        console.log("📤 发送到后端的数据:", JSON.stringify(requestData));
+        console.log("🔢 pageNumber的值和类型:", requestData.pageNumber, typeof requestData.pageNumber);
+
         const response = await fetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: userMessage.content,
-            pdfUrl: pdfUrl,
-            pdfName: selectedPdf,
-            userId: user?.id,
-            userName: user?.name,
-            userEmail: user?.email,
-          }),
+          body: JSON.stringify(requestData),
         });
+        console.log("后端响应状态:", response.status);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -694,74 +717,115 @@ export default function ChatPage() {
     }
   };
 
-  const handlePageChange = (event: MessageEvent) => {
-    // Handler for PDF page change events
-    if (event.data && event.data.type === "PDF_PAGE_CHANGE") {
-      console.log(`Page changed to: ${event.data.page}/${event.data.total}`);
-    }
-  };
-
   // 在页面组件中添加一个全局的消息监听器
   useEffect(() => {
     // 监听PDF.js查看器发来的页面变化事件
     const handlePageChange = (event: MessageEvent) => {
+      console.log("🔔 收到消息事件:", event.data);
+
       if (event.data && event.data.type === "PDF_PAGE_CHANGE") {
-        // Log page change event with detailed information (English)
-        console.log(
-          `[PDF Event] Page changed: ${event.data.page}/${event.data.total} for PDF: ${selectedPdf}`
-        );
+        console.log("📄 收到PDF页面变化事件:", event.data);
 
-        // 发送当前页码信息到后端
-        if (selectedPdf) {
-          console.log(
-            `[PDF Backend] Sending current page data to backend - PDF: ${selectedPdf}, Page: ${event.data.page}/${event.data.total}`
-          );
-
-          fetch("/api/current-page", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              pdfKey: selectedPdf,
-              currentPage: event.data.page,
-              totalPages: event.data.total,
-            }),
-          })
-            .then((response) => {
-              // Log response status (English)
-              console.log(
-                `[PDF Backend] Server responded with status: ${response.status
-                } ${response.ok ? "(Success)" : "(Failed)"}`
-              );
-              return response.json();
-            })
-            .then((data) => {
-              // Log response data (English)
-              console.log("[PDF Backend] Response data:", data);
-            })
-            .catch((error) => {
-              console.error(
-                "[PDF Backend] Error sending page info to backend:",
-                error
-              );
-            });
+        // 更新当前页码状态
+        const pageNumber = Number(event.data.page);
+        if (!isNaN(pageNumber) && pageNumber > 0) {
+          setCurrentPageNumber(pageNumber);
+          console.log("✅ 已更新当前页码状态:", pageNumber, typeof pageNumber);
+        } else {
+          console.error("❌ 无效的页码:", event.data.page);
         }
       }
     };
 
+    console.log("📌 设置PDF页面变化监听器 - 当前选中PDF:", selectedPdf);
     window.addEventListener("message", handlePageChange);
 
     return () => {
+      console.log("🗑️ 清除PDF页面变化监听器");
       window.removeEventListener("message", handlePageChange);
     };
   }, [selectedPdf]);
+
+  // 监控页码状态变化
+  useEffect(() => {
+    console.log("🔄 currentPageNumber状态已更新:", currentPageNumber, typeof currentPageNumber);
+  }, [currentPageNumber]);
+
+  // 修改PDF加载完成处理函数，将脚本注入到iframe中
+  const handlePdfLoad = () => {
+    console.log("PDF.js viewer loaded");
+    setPdfLoading(false);
+
+    // 设置初始页码为1
+    console.log("主动设置初始页码为1");
+    setCurrentPageNumber(1);
+
+    try {
+      // 获取iframe元素
+      const iframe = document.getElementById('pdfjs-iframe') as HTMLIFrameElement;
+
+      if (!iframe || !iframe.contentWindow || !iframe.contentDocument) {
+        console.error("无法获取PDF iframe或其内容");
+        return;
+      }
+
+      console.log("成功获取PDF iframe");
+
+      // 创建脚本元素
+      const script = document.createElement("script");
+      script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`;
+
+      // 将脚本添加到iframe的文档中，而不是主文档
+      iframe.contentDocument.body.appendChild(script);
+
+      console.log("已将PDF页面监听脚本注入到iframe中");
+
+      return () => {
+        try {
+          if (iframe && iframe.contentDocument) {
+            const scriptElement = iframe.contentDocument.querySelector('script[src*="pdf-page-direct-listener.js"]');
+            if (scriptElement && scriptElement.parentNode) {
+              scriptElement.parentNode.removeChild(scriptElement);
+            }
+          }
+        } catch (e) {
+          console.error("移除iframe中的脚本时出错:", e);
+        }
+      };
+    } catch (e) {
+      console.error("在iframe中添加脚本时出错:", e);
+    }
+  };
+
+  // 添加一个测试页码更新的函数
+  const testPageChange = () => {
+    const randomPage = Math.floor(Math.random() * 10) + 1;
+    console.log("🧪 测试页码更新 - 发送随机页码:", randomPage);
+
+    // 手动触发一个页码更新事件
+    const testEvent = {
+      type: "PDF_PAGE_CHANGE",
+      page: randomPage,
+      total: 100
+    };
+
+    window.postMessage(testEvent, "*");
+  };
 
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* HEADER */}
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Chat Interface</h1>
+        <div className="flex items-center">
+          <h1 className="text-2xl font-bold text-gray-800 mr-4">Chat Interface</h1>
+          <button
+            onClick={testPageChange}
+            className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+          >
+            测试页码更新
+          </button>
+          <span className="ml-2 text-sm text-gray-500">当前页码: {currentPageNumber}</span>
+        </div>
         {/* User info and logout button */}
         {userLoading ? (
           <div className="flex items-center">
@@ -990,26 +1054,7 @@ export default function ChatPage() {
                       className="w-full h-full border-0"
                       name="pdfjs-viewer"
                       id="pdfjs-iframe"
-                      onLoad={() => {
-                        console.log("PDF.js viewer loaded");
-                        setPdfLoading(false);
-
-                        // Load the page listener script after iframe is loaded
-                        const script = document.createElement("script");
-                        script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`; // Add timestamp to prevent caching
-                        document.body.appendChild(script);
-
-                        // Clean up on unmount
-                        return () => {
-                          try {
-                            if (script && script.parentNode) {
-                              script.parentNode.removeChild(script);
-                            }
-                          } catch (e) {
-                            console.error("Error removing scripts:", e);
-                          }
-                        };
-                      }}
+                      onLoad={handlePdfLoad}
                     />
                   </div>
                 </div>
@@ -1199,8 +1244,8 @@ export default function ChatPage() {
                       <div className="mt-4 rounded-lg border border-gray-200 mb-4 overflow-hidden">
                         <div
                           className={`p-3 ${quizFeedback.isCorrect
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
                             } font-medium`}
                         >
                           {quizFeedback.isCorrect ? "Correct!" : "Incorrect!"}
@@ -1223,8 +1268,8 @@ export default function ChatPage() {
                         onClick={handlePreviousQuestion}
                         disabled={currentQuestionIndex === 0}
                         className={`px-4 py-2 rounded-md ${currentQuestionIndex === 0
-                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                            : "bg-blue-600 text-white hover:bg-blue-700"
+                          ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
                           } transition-colors`}
                       >
                         Previous
@@ -1235,8 +1280,8 @@ export default function ChatPage() {
                           currentQuestionIndex === quizQuestions.length - 1
                         }
                         className={`px-4 py-2 rounded-md ${currentQuestionIndex === quizQuestions.length - 1
-                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                            : "bg-blue-600 text-white hover:bg-blue-700"
+                          ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
                           } transition-colors`}
                       >
                         Next
@@ -1259,8 +1304,8 @@ export default function ChatPage() {
                         <div
                           key={message.id || index}
                           className={`mb-3 p-3 rounded max-w-[90%] ${message.sender === "user"
-                              ? "bg-blue-100 ml-auto"
-                              : "bg-gray-100 mr-auto"
+                            ? "bg-blue-100 ml-auto"
+                            : "bg-gray-100 mr-auto"
                             }`}
                         >
                           <div className="flex items-start gap-2">

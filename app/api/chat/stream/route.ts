@@ -6,7 +6,7 @@ const KIWI_BOT_URL = 'http://127.0.0.1:5000/query';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { message, pdfName, userId, userName, userEmail, quiz_mode } = body;
+    const { message, pdfName, userId, userName, userEmail, quiz_mode, pageNumber } = body;
     const pdf_url = pdfName;
 
     // Extract just the filename from the path if it exists
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
       user_name: userName,
       user_email: userEmail,
       quiz_mode: quiz_mode,
+      pageNumber: pageNumber,
     }, {
       responseType: 'stream',
     });
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
         const text = new TextDecoder().decode(chunk);
         // Split by double newlines to get individual SSE messages
         const messages = text.split('\n\n');
-        
+
         for (const message of messages) {
           if (message.startsWith('data: ')) {
             // Forward the SSE message

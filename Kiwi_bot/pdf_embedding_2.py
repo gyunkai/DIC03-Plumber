@@ -11,10 +11,15 @@ import tempfile
 import logging
 from tqdm import tqdm
 import time
+import argparse
 
+# 加载环境变量但会被显式API密钥覆盖
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
+
+# 显式设置OpenAI API密钥
+OPENAI_API_KEY = "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"
 
 class PDFEmbeddingProcessor:
     def __init__(self, openai_api_key: str):
@@ -87,30 +92,56 @@ class PDFEmbeddingProcessor:
             self.cur.execute(
                 """
                 INSERT INTO "PdfChunk" 
-                    ("pdfPath", id, "pdfName", content, "pageNumber", embedding)
+                    (id, "pdfName", content, "pageNumber", embedding, "pdfPath")
                 VALUES 
-                    (%s, gen_random_uuid(), %s, %s, %s, %s::vector)
+                    (gen_random_uuid(), %s, %s, %s, %s::vector, %s)
                 """,
                 (
-                    sanitized_pdf_path,
                     sanitized_pdf_name,
                     sanitized_content,
                     chunk["metadata"].get("page", 0),
-                    embedding
+                    embedding,
+                    sanitized_pdf_path
                 )
             )
         self.conn.commit()
-
-
+        
+    def delete_existing_chunks(self, pdf_path=None):
+        """删除数据库中已存在的PDF块，可以指定特定的PDF路径或删除所有"""
+        try:
+            if pdf_path:
+                logging.info(f"删除PDF路径为'{pdf_path}'的现有chunks...")
+                self.cur.execute('DELETE FROM "PdfChunk" WHERE "pdfPath" = %s', (pdf_path,))
+            else:
+                logging.info("删除所有现有chunks...")
+                self.cur.execute('DELETE FROM "PdfChunk"')
+            
+            self.conn.commit()
+            affected_rows = self.cur.rowcount
+            logging.info(f"已删除{affected_rows}条记录")
+            return affected_rows
+        except Exception as e:
+            self.conn.rollback()
+            logging.error(f"删除操作失败: {e}")
+            return 0
 
     def close(self):
         self.cur.close()
         self.conn.close()
 
 def main():
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY not set")
+    parser = argparse.ArgumentParser(description='PDF Embedding Processor')
+    parser.add_argument('--reembed-all', action='store_true', help='重新嵌入所有PDF，包括已经嵌入过的')
+    parser.add_argument('--delete-all', action='store_true', help='删除所有现有的PDF嵌入')
+    parser.add_argument('--limit', type=int, default=0, help='限制处理的PDF数量，用于测试，默认为0表示处理所有')
+    parser.add_argument('--append-only', action='store_true', help='只添加嵌入，不删除现有数据，即使是处理相同的PDF')
+    args = parser.parse_args()
+
+    # 使用显式设置的API密钥，而不是从环境变量获取
+    # OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    # if not OPENAI_API_KEY:
+    #     raise ValueError("OPENAI_API_KEY not set")
+    logging.info(f"使用显式设置的OpenAI API密钥")
 
     bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
     if not bucket_name:
@@ -119,30 +150,57 @@ def main():
     processor = PDFEmbeddingProcessor(OPENAI_API_KEY)
 
     try:
-        logging.info(f"Fetching all PDFs from bucket '{bucket_name}'...")
+        # 如果指定了删除所有选项
+        if args.delete_all:
+            processor.delete_existing_chunks()
+            
+        logging.info(f"从桶'{bucket_name}'获取所有PDF...")
         pdf_keys = processor.fetch_all_pdf_keys(bucket_name)
 
         if not pdf_keys:
-            logging.warning("No PDFs found in bucket.")
+            logging.warning("桶中未找到PDF文件。")
             return
 
-        # Get already embedded PDFs from the database
-        processor.cur.execute('SELECT DISTINCT "pdfPath" FROM "PdfChunk";')
-        embedded_pdf_paths = {row[0] for row in processor.cur.fetchall()}
+        # 只过滤出以public/lapdf和public/mlpdf开头的PDF路径
+        pdf_keys = [key for key in pdf_keys if key.startswith('public/lapdf') or key.startswith('public/mlpdf')]
+        logging.info(f"过滤后剩余{len(pdf_keys)}个符合条件的PDF文件")
 
-        # Filter out already embedded PDFs
-        new_pdf_keys = [key for key in pdf_keys if key not in embedded_pdf_paths]
-
-        if not new_pdf_keys:
-            logging.info("All PDFs have already been embedded.")
+        if not pdf_keys:
+            logging.warning("没有找到以public/lapdf或public/mlpdf开头的PDF文件。")
             return
 
-        logging.info(f"{len(new_pdf_keys)} new PDFs found to embed.")
-
-        for s3_key in tqdm(new_pdf_keys, desc="Overall progress"):
-            logging.info(f"Embedding '{s3_key}'...")
+        # 如果不是重新嵌入所有PDF，则只处理新的PDF
+        if not args.reembed_all:
+            # 获取数据库中已嵌入的PDF
+            processor.cur.execute('SELECT DISTINCT "pdfPath" FROM "PdfChunk";')
+            embedded_pdf_paths = {row[0] for row in processor.cur.fetchall()}
             
-            # Fetch PDF locally for embedding
+            # 过滤出未嵌入的PDF
+            pdf_keys_to_process = [key for key in pdf_keys if key not in embedded_pdf_paths]
+            
+            if not pdf_keys_to_process:
+                logging.info("所有符合条件的PDF都已经嵌入。")
+                return
+                
+            logging.info(f"找到{len(pdf_keys_to_process)}个新PDF需要嵌入。")
+        else:
+            # 如果是重新嵌入所有PDF，则处理所有PDF
+            pdf_keys_to_process = pdf_keys
+            logging.info(f"将重新嵌入所有{len(pdf_keys_to_process)}个符合条件的PDF。")
+
+        # 如果设置了限制参数，只处理指定数量的PDF
+        if args.limit > 0:
+            pdf_keys_to_process = pdf_keys_to_process[:args.limit]
+            logging.info(f"根据限制参数，只处理前{args.limit}个PDF进行测试。")
+
+        for s3_key in tqdm(pdf_keys_to_process, desc="总体进度"):
+            logging.info(f"处理'{s3_key}'...")
+            
+            # 如果是重新嵌入，且不是只追加模式，则先删除现有的chunks
+            if args.reembed_all and not args.append_only:
+                processor.delete_existing_chunks(s3_key)
+            
+            # 从S3获取PDF到本地进行嵌入
             pdf_local_path = processor.fetch_pdf_from_s3(bucket_name, s3_key)
 
             chunks = processor.load_pdf(pdf_local_path)
@@ -154,16 +212,16 @@ def main():
                 pdf_path=s3_key
             )
 
-            # Clean up the downloaded PDF file
+            # 清理下载的PDF文件
             if os.path.exists(pdf_local_path):
                 os.remove(pdf_local_path)
 
-            time.sleep(1)  # To respect rate limits
+            time.sleep(1)  # 尊重API速率限制
 
-        logging.info("New PDFs processed and embeddings inserted successfully!")
+        logging.info("PDF处理和嵌入成功完成！")
 
     except Exception as e:
-        logging.error(f"Error: {e}", exc_info=True)
+        logging.error(f"错误: {e}", exc_info=True)
     finally:
         processor.close()
 

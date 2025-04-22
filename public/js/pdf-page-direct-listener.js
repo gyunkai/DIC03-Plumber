@@ -1,193 +1,89 @@
 /**
  * PDF.js Direct Page Listener
- * A simplified approach to monitor PDF.js viewer page changes
+ * 此脚本必须在PDF.js iframe内部运行
  */
 
-
-// Check if this is the top window and PDFViewerApplication exists
-
-console.log("Current window location:", window.location.href);
-console.log("Is this the top window?", window === window.top);
-console.log("PDFViewerApplication exists?", !!window.PDFViewerApplication);
-console.log("[Direct Listener] window.location.href:", window.location.href);
-
 (function () {
-    console.log('[Direct Listener] Script loaded at', new Date().toISOString());
+    console.log("[PDF内部] 页面监听脚本已加载", new Date().toISOString());
 
-    // Wait for PDF.js to finish loading the document
-    document.addEventListener("documentloaded", () => {
-        // At this point, PDFViewerApplication should exist and be initialized
-        if (window.PDFViewerApplication) {
-        console.log("[Direct Listener] PDF is fully loaded!");
-        console.log("PDFViewerApplication:", window.PDFViewerApplication);
-        } else {
-        console.warn("[Direct Listener] PDFViewerApplication is still undefined!");
+    // 全局变量记录上次页码
+    let lastPage = null;
+    let lastTotal = null;
+
+    // 等待PDFViewerApplication加载完成
+    function waitForPDFApplication() {
+        // 检查PDF.js应用对象是否已加载
+        if (typeof PDFViewerApplication === 'undefined' ||
+            !PDFViewerApplication.pdfViewer ||
+            !PDFViewerApplication.pdfViewer.currentPageNumber) {
+
+            console.log("[PDF内部] 等待PDF应用加载完成...");
+            setTimeout(waitForPDFApplication, 500);
+            return;
         }
-  });
 
-        // Listen for scroll-to-page messages from parent React app
+        console.log("[PDF内部] PDF应用已加载完成!");
 
-    window.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "PDF_SCROLL_TO_PAGE") {
-        const pageNumber = event.data.page;
-        if (
-            typeof pageNumber === "number" &&
-            window.PDFViewerApplication &&
-            Number.isInteger(pageNumber)
-        ) {
-            console.log("[Direct Listener] Scrolling to page:", pageNumber);
-            window.PDFViewerApplication.pdfViewer.currentPageNumber = pageNumber;
-        }
-        }
-    });
+        try {
+            // 获取当前页码和总页数
+            const currentPage = PDFViewerApplication.pdfViewer.currentPageNumber;
+            const totalPages = PDFViewerApplication.pagesCount;
 
-    
-  
-    // Function to check current page periodically
-    function startPageCheck() {
-        console.log('[Direct Listener] Starting page checking...');
+            console.log("[PDF内部] 初始页码:", currentPage, "/", totalPages);
 
-        // Store last checked page to avoid sending duplicate updates
-        let lastPage = null;
-        let lastTotal = null;
+            // 发送初始页码到父窗口
+            window.parent.postMessage({
+                type: "PDF_PAGE_CHANGE",
+                page: currentPage,
+                total: totalPages
+            }, "*");
 
-        // Check function that will run periodically
-        function checkCurrentPage() {
-            try {
-                const iframe = document.getElementById('pdfjs-iframe');
-                if (!iframe) {
-                    console.error('[Direct Listener] PDF iframe not found');
-                    return;
-                }
+            // 监听页面变化事件
+            PDFViewerApplication.eventBus.on("pagechanging", function (evt) {
+                const newPage = evt.pageNumber;
+                console.log("[PDF内部] 页面变化:", newPage, "/", totalPages);
 
-                // Try to access iframe content
+                // 向父窗口发送页面变化消息
+                window.parent.postMessage({
+                    type: "PDF_PAGE_CHANGE",
+                    page: newPage,
+                    total: totalPages
+                }, "*");
+            });
+
+            // 设置周期性检查，以防事件监听器不触发
+            setInterval(function () {
                 try {
-                    const iframeWindow = iframe.contentWindow;
+                    if (typeof PDFViewerApplication !== 'undefined' &&
+                        PDFViewerApplication.pdfViewer) {
 
-                    // Check if PDFViewerApplication exists
-                    if (iframeWindow && iframeWindow.PDFViewerApplication) {
-                        const pdfApp = iframeWindow.PDFViewerApplication;
+                        const currentPage = PDFViewerApplication.pdfViewer.currentPageNumber;
+                        const totalPages = PDFViewerApplication.pagesCount;
 
-                        // Get current page and total pages
-                        if (pdfApp.page && pdfApp.pagesCount) {
-                            const currentPage = pdfApp.page;
-                            const totalPages = pdfApp.pagesCount;
+                        // 仅在页码变化时发送消息
+                        if (currentPage !== lastPage || totalPages !== lastTotal) {
+                            lastPage = currentPage;
+                            lastTotal = totalPages;
 
-                            // Only send update if page has changed
-                            if (currentPage !== lastPage || totalPages !== lastTotal) {
-                                console.log('[Direct Listener] Page changed:', currentPage, '/', totalPages);
+                            console.log("[PDF内部] 轮询检测到页面变化:", currentPage, "/", totalPages);
 
-                                // Update stored values
-                                lastPage = currentPage;
-                                lastTotal = totalPages;
-
-                                // Get PDF name from the UI
-                                const pdfNameElement = document.querySelector('.text-sm');
-                                let pdfKey = 'unknown';
-                                if (pdfNameElement) {
-                                    pdfKey = pdfNameElement.textContent.replace('PDF: ', '');
-                                }
-
-                                // Send data to backend
-                                console.log('[Direct Listener] Sending data to backend:', {
-                                    pdfKey,
-                                    currentPage,
-                                    totalPages
-                                });
-
-                                fetch('/api/current-page', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify({
-                                        pdfKey,
-                                        currentPage,
-                                        totalPages
-                                    })
-                                })
-                                    .then(response => {
-                                        console.log('[Direct Listener] Backend response status:', response.status);
-                                        return response.json();
-                                    })
-                                    .then(data => {
-                                        console.log('[Direct Listener] Backend response:', data);
-                                    })
-                                    .catch(error => {
-                                        console.error('[Direct Listener] Error sending to backend:', error);
-                                    });
-
-                                // Also try to highlight the current page
-                                highlightCurrentPage(iframeWindow, currentPage);
-                            }
+                            window.parent.postMessage({
+                                type: "PDF_PAGE_CHANGE",
+                                page: currentPage,
+                                total: totalPages
+                            }, "*");
                         }
-                    } else {
-                        console.log('[Direct Listener] PDFViewerApplication not available yet');
                     }
-                } catch (error) {
-                    console.error('[Direct Listener] Error accessing iframe content:', error);
+                } catch (e) {
+                    console.error("[PDF内部] 轮询检查页码时出错:", e);
                 }
-            } catch (error) {
-                console.error('[Direct Listener] Error in checkCurrentPage:', error);
-            }
+            }, 1000);
+
+        } catch (e) {
+            console.error("[PDF内部] 设置页面监听器时出错:", e);
         }
-
-        // Function to highlight current page
-        function highlightCurrentPage(iframeWindow, pageNumber) {
-            try {
-                // First try to inject styles if they don't exist
-                const styleId = 'pdf-highlight-styles';
-                let styleElement = iframeWindow.document.getElementById(styleId);
-
-                if (!styleElement) {
-                    styleElement = iframeWindow.document.createElement('style');
-                    styleElement.id = styleId;
-                    styleElement.textContent = `
-                        .page.currentPage {
-                            box-shadow: 0 0 15px 5px rgba(255, 0, 0, 0.7) !important;
-                            border: 4px solid #ff0000 !important;
-                            z-index: 100 !important;
-                            transform: scale(1.02) !important;
-                            transition: all 0.3s ease !important;
-                            position: relative !important;
-                        }
-                    `;
-                    iframeWindow.document.head.appendChild(styleElement);
-                    console.log('[Direct Listener] Highlight styles injected');
-                }
-
-                // Get all pages and remove highlight
-                const pages = iframeWindow.document.querySelectorAll('.page');
-                console.log('[Direct Listener] Found', pages.length, 'pages');
-
-                pages.forEach(page => {
-                    page.classList.remove('currentPage');
-                });
-
-                // Add highlight to current page
-                if (pages.length >= pageNumber) {
-                    const currentPage = pages[pageNumber - 1];
-                    currentPage.classList.add('currentPage');
-                    console.log('[Direct Listener] Highlighted page', pageNumber);
-                }
-            } catch (error) {
-                console.error('[Direct Listener] Error highlighting page:', error);
-            }
-        }
-
-        // Check immediately and then set up interval
-        checkCurrentPage();
-
-        // Check every 1 second
-        const intervalId = setInterval(checkCurrentPage, 1000);
-
-        // Return cleanup function
-        return function cleanup() {
-            clearInterval(intervalId);
-            console.log('[Direct Listener] Page checking stopped');
-        };
     }
 
-    // Start checking after a short delay to ensure iframe is loaded
-    setTimeout(startPageCheck, 3000);
+    // 启动监听过程
+    waitForPDFApplication();
 })(); 

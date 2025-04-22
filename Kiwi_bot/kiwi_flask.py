@@ -1,6 +1,6 @@
 import os
 import glob
-from flask import Flask, request, jsonify, Response, send_file
+from flask import Flask, request, jsonify, Response
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
@@ -9,7 +9,7 @@ import numpy as np
 import json
 from psycopg2.extras import Json
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 import psycopg2
 from psycopg2.extras import Json
 from urllib.parse import urlparse
@@ -18,61 +18,8 @@ from pathlib import Path
 import time
 import traceback
 import uuid
-import openai
-import tempfile
-from flask_cors import CORS
-import logging
 
-# System prompt for the bot
-SYSTEM_PROMPT = """You are Kiwi, an AI assistant specialized in helping students with their academic studies. 
-You have access to the following tools and capabilities:
-
-1. Text-to-Speech (TTS):
-   - You can generate speech from text using different voices and models
-   - Available voices: alloy, echo, fable, onyx, nova, shimmer
-   - Available models: tts-1, tts-1-hd
-   - Speed can be adjusted from 0.25 to 4.0
-
-2. Image Generation:
-   - You can generate images using DALL-E 3
-   - Available sizes: 1024x1024, 1792x1024, 1024x1792
-   - Available qualities: standard, hd
-   - Available styles: natural, vivid
-   - Images are generated based on the conversation context and user's request
-
-When a user requests an image, you should:
-1. Understand the context from the conversation
-2. Generate a detailed prompt that captures the user's request
-3. Use the appropriate size, quality, and style based on the request
-4. Return the generated image URL and prompt
-
-For example, if a user asks "generate an image of a neural network", you should:
-1. Consider any previous context about neural networks from the conversation
-2. Create a detailed prompt like "A detailed illustration of a neural network with interconnected nodes and layers, showing data flow and activation patterns, in a modern scientific style"
-3. Use appropriate parameters (e.g., standard quality, natural style)
-4. Return the image URL and the prompt used
-
-Remember to:
-- Always consider the conversation context when generating images
-- Create detailed, specific prompts for better results
-- Use appropriate parameters based on the request
-- Be creative but stay within academic and professional boundaries
-
-Your primary goal is to help students understand complex concepts through both text and visual explanations.
-
-Always remember personal details provided by the user, especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. 
-Here you are tasked with answering questions based on the document provided which is for the course which will be provided with. 
-Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. 
-For each answer, cite your sources from the pages using the format add 1 to the page number [Page X](page://X) — this will be converted into clickable links, start counting from 1.
-The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided.
-Always include these page references when providing information from the document. 
-Please space out paragraphs.
-Make your answers helpful and informative while clearly indicating which page contains the information.
-If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."""
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import re
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -90,27 +37,8 @@ print("DATABASE_URL3:", os.getenv("DATABASE_URL3"))
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 os.environ["DATABASE_URL3"] = os.getenv("DATABASE_URL3")
 
-# Initialize OpenAI client with explicit API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    logger.error("OpenAI API key is not set in environment variables")
-else:
-    logger.info("OpenAI API key is set and ready to use")
-
 # Initialize Flask app
 app = Flask(__name__)
-
-# Configure CORS to allow requests from Next.js development server
-CORS(app, resources={
-    r"/*": {
-        "origins": [
-            "http://localhost:3000",  # Next.js development server
-            "http://127.0.0.1:3000",
-        ],
-        "methods": ["POST", "GET", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Accept"],
-    }
-})
 
 # ---------- Global Setup ----------
 # Check for API key
@@ -225,6 +153,66 @@ def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
         conn.commit()
     except Exception as e:
         print(f"Error in session management: {e}")
+        traceback.print_exc()
+    finally:
+        conn.close()
+
+def update_user_reading_progress(user_id, pdf_path, page_number):
+    """
+    更新用户的阅读进度，记录用户正在阅读的PDF和页码
+    
+    Args:
+        user_id (str): 用户ID
+        pdf_path (str): PDF路径 
+        page_number (int): 当前页码
+    """
+    if not user_id or not pdf_path or page_number is None:
+        print("缺少更新阅读进度所需的参数")
+        return
+    
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            # 首先检查该用户对该文档是否已有阅读记录
+            cursor.execute("""
+                SELECT id FROM "UserInteraction" 
+                WHERE "userId" = %s AND "contentRef" = %s AND "type" = 'reading_progress'
+                LIMIT 1
+            """, (user_id, pdf_path))
+            
+            record = cursor.fetchone()
+            current_time = datetime.utcnow()
+            
+            if record:
+                # 更新现有记录
+                record_id = record[0]
+                cursor.execute("""
+                    UPDATE "UserInteraction"
+                    SET "data" = %s, "updatedAt" = %s
+                    WHERE id = %s
+                """, (Json({"current_page": page_number, "last_read": current_time.isoformat()}), current_time, record_id))
+                print(f"更新用户 {user_id} 的阅读进度: {pdf_path} 第 {page_number} 页")
+            else:
+                # 创建新记录
+                record_id = str(uuid.uuid4())
+                cursor.execute("""
+                    INSERT INTO "UserInteraction" (id, "userId", "type", "contentRef", "data", "createdAt", "updatedAt")
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    record_id, 
+                    user_id, 
+                    'reading_progress', 
+                    pdf_path, 
+                    Json({"current_page": page_number, "last_read": current_time.isoformat()}),
+                    current_time,
+                    current_time
+                ))
+                print(f"创建用户 {user_id} 的阅读进度: {pdf_path} 第 {page_number} 页")
+            
+            conn.commit()
+    except Exception as e:
+        print(f"更新阅读进度时出错: {e}")
+        traceback.print_exc()
     finally:
         conn.close()
 
@@ -343,7 +331,6 @@ system_prompt = (
     "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links, start counting from 1."
     "The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided."
     "Always include these page references when providing information from the document. "
-    "Please space out paragrahs"
     "Make your answers helpful and informative while clearly indicating which page contains the information."
     "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
 
@@ -387,7 +374,21 @@ prompt_template = PromptTemplate(
     )
 )
 
-def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fallback: bool = True) -> List[Dict]:
+def get_relevant_chunks(query: str, pdf_name: str = None, pdf_path: str = None, k: int = 5, allow_fallback: bool = True, use_ann: bool = True) -> List[Dict]:
+    """
+    获取与查询相关的文档块
+    
+    Args:
+        query (str): 用户查询
+        pdf_name (str, optional): PDF名称过滤
+        pdf_path (str, optional): PDF路径过滤 (新增)
+        k (int): 返回的结果数量
+        allow_fallback (bool): 如果在指定PDF中找不到，是否回退到全局搜索
+        use_ann (bool): 是否使用近似最近邻搜索加速查询 (新增)
+    
+    Returns:
+        Tuple[List[Dict], bool]: 相关文档块列表和是否使用了回退策略
+    """
     query_embedding = embeddings.embed_query(query)
     
     conn = get_db_connection()
@@ -398,49 +399,73 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fall
         with conn.cursor() as cursor:
             cursor.execute("SET statement_timeout = 30000;")
 
-            # First: try within the specified PDF
-            if pdf_name:
-                sql = """
-                SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+            # 准备基础SQL查询，根据use_ann参数决定使用近似最近邻或精确搜索
+            if use_ann:
+                # 使用HNSW索引的近似最近邻查询
+                distance_op = "<=>"  # cosine distance
+                order_by = f"embedding {distance_op} %s::vector"
+                print("使用近似最近邻搜索")
+            else:
+                # 传统精确搜索
+                distance_op = "<=>"
+                order_by = f"embedding {distance_op} %s::vector"
+                print("使用精确向量搜索")
+
+            # 首先：尝试在特定的PDF中查询
+            if pdf_path:
+                # 新增：通过pdfPath查询
+                sql = f"""
+                SELECT id, content, "pageNumber", "pdfName", "pdfPath", (embedding {distance_op} %s::vector) as distance
+                FROM "PdfChunk"
+                WHERE "pdfPath" = %s
+                ORDER BY {order_by}
+                LIMIT %s;
+                """
+                cursor.execute(sql, (query_embedding, pdf_path, query_embedding, k))
+            elif pdf_name:
+                # 保持原有功能：通过pdfName查询
+                sql = f"""
+                SELECT id, content, "pageNumber", "pdfName", "pdfPath", (embedding {distance_op} %s::vector) as distance
                 FROM "PdfChunk"
                 WHERE "pdfName" = %s
-                ORDER BY embedding <=> %s::vector
+                ORDER BY {order_by}
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, pdf_name, query_embedding, k))
-                rows = cursor.fetchall()
-
-                if not rows and allow_fallback:
-                    # Fallback: search across ALL PDFs
-                    used_fallback = True
-                    print(f"⚠️ No matches in {pdf_name}. Falling back to global search.")
-                    sql = """
-                    SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
-                    FROM "PdfChunk"
-                    ORDER BY embedding <=> %s::vector
-                    LIMIT %s;
-                    """
-                    cursor.execute(sql, (query_embedding, query_embedding, k))
-                    rows = cursor.fetchall()
             else:
-                # Default to global search if no PDF name provided
-                sql = """
-                SELECT id, content, "pageNumber", "pdfName", (embedding <=> %s::vector) as distance
+                # 全局搜索
+                sql = f"""
+                SELECT id, content, "pageNumber", "pdfName", "pdfPath", (embedding {distance_op} %s::vector) as distance
                 FROM "PdfChunk"
-                ORDER BY embedding <=> %s::vector
+                ORDER BY {order_by}
+                LIMIT %s;
+                """
+                cursor.execute(sql, (query_embedding, query_embedding, k))
+                
+            rows = cursor.fetchall()
+
+            # 若未找到结果且允许回退，则尝试全局搜索
+            if not rows and allow_fallback and (pdf_name or pdf_path):
+                used_fallback = True
+                print(f"⚠️ 在指定PDF中未找到匹配。回退到全局搜索。")
+                sql = f"""
+                SELECT id, content, "pageNumber", "pdfName", "pdfPath", (embedding {distance_op} %s::vector) as distance
+                FROM "PdfChunk"
+                ORDER BY {order_by}
                 LIMIT %s;
                 """
                 cursor.execute(sql, (query_embedding, query_embedding, k))
                 rows = cursor.fetchall()
 
             for row in rows:
-                id, content, page_number, pdf, distance = row
+                id, content, page_number, pdf, pdf_path, distance = row
                 chunks.append({
                     "id": id,
                     "content": content,
                     "metadata": {
                         "page": page_number,
                         "pdf_name": pdf,
+                        "pdf_path": pdf_path,
                         "source": f"{pdf} - Page {page_number}",
                         "distance": distance
                     }
@@ -448,6 +473,7 @@ def get_relevant_chunks(query: str, pdf_name: str = None, k: int = 5, allow_fall
 
     except Exception as e:
         print(f"Error in similarity search: {e}")
+        traceback.print_exc()
     finally:
         conn.close()
 
@@ -486,11 +512,14 @@ def get_fallback_chunks(pdf_name: str = None, k: int = 10) -> List[Dict]:
     # Return limited number of chunks
     return sorted_chunks[:k]
 
-def get_document_context(query: str) -> str:
+def get_document_context(query: str, pdf_name: str = None, pdf_path: str = None, use_ann: bool = True) -> str:
     """
     Get relevant document context for a query
     Args:
         query (str): User query
+        pdf_name (str, optional): PDF name filter
+        pdf_path (str, optional): PDF path filter
+        use_ann (bool): Whether to use approximate nearest neighbor search
     Returns:
         str: Relevant document context
     """
@@ -498,37 +527,71 @@ def get_document_context(query: str) -> str:
     global document_chunks
     
     print(f"get_document_context called with query: {query}")
+    print(f"Filters - PDF Name: {pdf_name}, PDF Path: {pdf_path}")
     print(f"Current document_chunks length: {len(document_chunks) if document_chunks else 0}")
     
-    if not document_chunks:
+    # 根据是否有pdf_path选择加载方式
+    if not document_chunks or pdf_path:
         try:
-            document_chunks = load_embeddings_from_db()
-            print(f"Re-loaded {len(document_chunks)} document chunks from database")
+            # 如果指定了pdf_path，则不使用内存中的chunks，而是直接查询数据库
+            if pdf_path:
+                print(f"Querying directly with pdf_path: {pdf_path}")
+                # 直接通过get_relevant_chunks进行查询，不使用document_chunks
+                relevant_chunks, used_fallback = get_relevant_chunks(query, None, pdf_path, k=5, allow_fallback=True, use_ann=use_ann)
+                
+                # 格式化结果
+                formatted_chunks = []
+                for i, chunk in enumerate(relevant_chunks):
+                    page_number = chunk['metadata'].get('page', 'unknown')
+                    content = chunk['content']
+                    pdf_path_info = chunk['metadata'].get('pdf_path', '')
+                    
+                    # 生成页面信息
+                    page_info = f"[{pdf_path_info} - Page {page_number}]"
+                    formatted_chunks.append(f"{page_info}: {content}")
+                    print(f"Chunk {i}: Path {pdf_path_info}, Page {page_number}, Content length: {len(content)}")
+                
+                result = "\n---\n".join(formatted_chunks)
+                print(f"Found {len(relevant_chunks)} chunks via direct pdf_path query. Total context length: {len(result)} characters")
+                return result
+            else:
+                # 否则从数据库加载到内存
+                document_chunks = load_embeddings_from_db(pdf_name)
+                print(f"Re-loaded {len(document_chunks)} document chunks from database")
         except Exception as e:
             print(f"Error re-loading document chunks: {str(e)}")
+            traceback.print_exc()
             return "No document context available."
     
-    if not document_chunks:
+    if not document_chunks and not pdf_path:
         print("WARNING: document_chunks is still empty after reload attempt")
         return "No document context available."
-        
-    # Get PDF name from first chunk if available
-    pdf_name = None
-    if document_chunks and len(document_chunks) > 0 and 'metadata' in document_chunks[0]:
-        pdf_name = document_chunks[0].get('metadata', {}).get('pdf_name')
     
-    # Get relevant chunks using similarity search
-    relevant_chunks, used_fallback = get_relevant_chunks(query, pdf_name)
+    # 如果没有指定任何过滤条件，可以从document_chunks中获取
+    if not pdf_name and not pdf_path and document_chunks and len(document_chunks) > 0:
+        if 'metadata' in document_chunks[0]:
+            pdf_name = document_chunks[0].get('metadata', {}).get('pdf_name')
+    
+    # 使用document_chunks和pdf_name进行查询
+    relevant_chunks, used_fallback = get_relevant_chunks(query, pdf_name, None, k=5, allow_fallback=True, use_ann=use_ann)
     print(f"Found {len(relevant_chunks)} relevant chunks for query")
     
     # Format relevant chunks with page information
     formatted_chunks = []
     for i, chunk in enumerate(relevant_chunks):
         page_number = chunk['metadata'].get('page', 'unknown')
-        content = chunk['content']  # ✅ Define content properly
-        page_info = f"[Page {page_number}]"
-        formatted_chunks.append(f"{page_info}: {content}")  # ✅ Use content properly
-        print(f"Chunk {i}: Page {page_number}, Content length: {len(content)}")
+        content = chunk['content']
+        pdf_path_info = chunk['metadata'].get('pdf_path', '')
+        pdf_name_info = chunk['metadata'].get('pdf_name', '')
+        
+        # 生成页面信息，如果有PDF路径则包含路径信息
+        if pdf_path_info:
+            page_info = f"[{pdf_path_info} - Page {page_number}]"
+        else:
+            page_info = f"[Page {page_number}]"
+            
+        formatted_chunks.append(f"{page_info}: {content}")
+        print(f"Chunk {i}: Path {pdf_path_info}, Page {page_number}, Content length: {len(content)}")
     
     result = "\n---\n".join(formatted_chunks)
     print(f"Total context length: {len(result)} characters")
@@ -621,6 +684,64 @@ def generate_quiz_question(user_input, personalized_prompt, pdf_name, document_c
     answer_text = response.content.strip()
     return answer_text
 
+def create_vector_index():
+    """
+    在数据库中创建或更新向量索引以加速查询
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # 检查是否已存在索引
+            cursor.execute("""
+                SELECT indexname FROM pg_indexes 
+                WHERE tablename = 'PdfChunk' AND indexname = 'pdf_chunk_embedding_idx'
+            """)
+            
+            index_exists = cursor.fetchone() is not None
+            
+            if not index_exists:
+                print("Creating HNSW vector index for faster similarity search...")
+                # 创建HNSW索引，这是一种近似最近邻索引，能显著加速向量搜索
+                cursor.execute("""
+                    CREATE INDEX pdf_chunk_embedding_idx 
+                    ON "PdfChunk" USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64);
+                """)
+                conn.commit()
+                print("HNSW vector index created successfully.")
+            else:
+                print("Vector index already exists.")
+                
+            # 添加pdfPath的索引
+            cursor.execute("""
+                SELECT indexname FROM pg_indexes 
+                WHERE tablename = 'PdfChunk' AND indexname = 'pdf_chunk_path_idx'
+            """)
+            
+            path_index_exists = cursor.fetchone() is not None
+            
+            if not path_index_exists:
+                print("Creating index on pdfPath column...")
+                cursor.execute("""
+                    CREATE INDEX pdf_chunk_path_idx ON "PdfChunk" ("pdfPath");
+                """)
+                conn.commit()
+                print("pdfPath index created successfully.")
+            else:
+                print("pdfPath index already exists.")
+                
+    except Exception as e:
+        conn.rollback()
+        print(f"Error creating vector index: {str(e)}")
+        traceback.print_exc()
+    finally:
+        conn.close()
+
+# 应用启动时尝试创建向量索引
+try:
+    create_vector_index()
+except Exception as e:
+    print(f"Warning: Failed to create vector index: {str(e)}")
 
 @app.route("/query", methods=["POST"])
 def query():
@@ -631,42 +752,97 @@ def query():
         print(data)
         user_input = data["query"]
         pdf_name = data.get("pdf_name")
+        pdf_path = data.get("pdf_url")  # 获取pdf_path参数
+        page_number = data.get("pageNumber")  # 获取当前页码
         quiz_mode = data.get("quiz_mode", False)
         user_id = data.get("user_id", "anonymous")
         user_name = data.get("user_name", "User")
         user_email = data.get("user_email", "N/A")
         pdf_url = data.get("pdf_url")
-        print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) for PDF: {pdf_name} - Quiz mode: {quiz_mode} - URL: {pdf_url}")
+        use_ann = data.get("use_ann", True)
+        
+        # 记录更详细的阅读信息
+        reading_info = ""
+        if pdf_path:
+            reading_info += f"PDF路径: {pdf_path}"
+        elif pdf_name:
+            reading_info += f"PDF名称: {pdf_name}"
+            
+        if page_number:
+            reading_info += f", 当前页码: {page_number}"
+            
+        print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) - {reading_info} - Quiz mode: {quiz_mode}")
+
+   
+        if user_id != "anonymous" and pdf_path and page_number is not None:
+            update_user_reading_progress(user_id, pdf_path, page_number)
 
         # Get user-specific memory and personalized prompt
         user_data = get_user_memory(user_id, user_name, user_email)
         memory = user_data["memory"]
         personalized_prompt = user_data["personalized_prompt"]
 
-        # Compute document context regardless of quiz mode
-        relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
-        if not relevant_chunks:
-            document_context = "No relevant context found."
+        # 增强个性化提示，包含当前阅读的文档和页码信息
+        if pdf_path or page_number:
+            context_info = f"\n\nThe user is currently reading "
+            if pdf_path:
+                context_info += f"the document at path '{pdf_path}'"
+            elif pdf_name:
+                context_info += f"the document '{pdf_name}'"
+                
+            if page_number:
+                context_info += f" on page {page_number}"
+            
+            context_info += "."
+            personalized_prompt += context_info
+
+        # 1. 先尝试精准查询当前页
+        exact_context = None
+        if pdf_path and page_number is not None:
+            try:
+                conn = get_db_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT content
+                        FROM "PdfChunk"
+                        WHERE "pdfPath" = %s AND "pageNumber" = %s
+                        LIMIT 1
+                    """, (pdf_path, page_number))
+                    row = cursor.fetchone()
+                conn.close()
+
+                if row:
+                    exact_context = f"[{os.path.basename(pdf_path)} - Page {page_number}]: {row[0]}"
+                else:
+                    exact_context = f"No content found at {pdf_path} page {page_number}."
+            except Exception as e:
+                print(f"Error fetching exact page: {e}")
+                exact_context = "Error fetching page content."
+
+        # 2. 再做向量相似度检索（跨所有 PDF）
+        sim_chunks, _ = get_relevant_chunks(user_input, None, None, k=5, allow_fallback=True, use_ann=use_ann)
+        similar_contexts = []
+        for chunk in sim_chunks:
+            p = chunk['metadata']['page']
+            p_name = chunk['metadata'].get('pdf_name', 'Unknown')
+            p_path = chunk['metadata'].get('pdf_path', 'Unknown')
+            content = chunk['content']
+            source_info = p_path if p_path and p_path != 'Unknown' else p_name
+            similar_contexts.append(f"[{source_info} - Page {p}]: {content}")
+        sim_section = "\n---\n".join(similar_contexts) if similar_contexts else "No related content found."
+
+        # 3. 合并成最终 document_context
+        if exact_context:
+            document_context = (
+                f"**Current page content**:\n{exact_context}\n\n"
+                f"**Related passages from all documents**:\n{sim_section}"
+            )
         else:
-            fallback_note = ""
-            if used_fallback:
-                fallback_note = (
-                    "**Note:** No relevant content found in the current lecture. "
-                    "The following information comes from other lectures.\n\n"
-                )
-            
-            # Format chunks with proper page references
-            formatted_chunks = []
-            for chunk in relevant_chunks:
-                page_number = chunk['metadata'].get('page', 'unknown')
-                pdf_source = chunk['metadata'].get('pdf_name', '')
-                content = chunk['content']
-                page_info = f"[Page {page_number}](page://{page_number})"
-                if used_fallback:
-                    page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
-                formatted_chunks.append(f"{page_info}: {content}")
-            
-            document_context = fallback_note + "\n---\n".join(formatted_chunks)
+            document_context = sim_section
+
+        # 如果真一条都没，就给个提示
+        if not document_context.strip():
+            document_context = "No relevant context found."
 
         def generate():
             try:
@@ -678,15 +854,23 @@ def query():
                     chat_history_str = "\n".join(
                         msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
                     )
-                    final_prompt = (
-                        f"{SYSTEM_PROMPT}\n\n"  # Add system prompt
-                        f"{personalized_prompt}\n\n"
-                        f"Pdf key: {pdf_url}\n\n"
-                        f"Document Context:\n{document_context}\n\n"
-                        f"Conversation History:\n{chat_history_str}\n\n"
-                        f"User: {user_input}\n"
-                        f"Assistant:"
-                    )
+                    
+                    # 构建包含文档详细信息的最终提示
+                    final_prompt = f"{personalized_prompt}\n\n"
+                    
+                    if pdf_path:
+                        final_prompt += f"PDF Path: {pdf_path}\n"
+                    if pdf_name:
+                        final_prompt += f"PDF Name: {pdf_name}\n"
+                    if page_number:
+                        final_prompt += f"Current Page: {page_number}\n"
+                    if pdf_url:
+                        final_prompt += f"PDF URL: {pdf_url}\n"
+                        
+                    final_prompt += f"\nDocument Context:\n{document_context}\n\n"
+                    final_prompt += f"Conversation History:\n{chat_history_str}\n\n"
+                    final_prompt += f"User: {user_input}\n"
+                    final_prompt += f"Assistant:"
                     
                     # Use streaming for the LLM response
                     response = llm.stream(final_prompt)
@@ -719,17 +903,25 @@ def query():
                         yield f"data: {json.dumps({'answer': sentence_buffer})}\n\n"
                     
                     print("Streaming complete. Final answer:", full_answer)
+                    
+                    # 确定要保存的PDF名称，优先使用pdf_name，如果没有则使用pdf_path的文件名
+                    pdf_to_save = pdf_name
+                    if not pdf_to_save and pdf_path:
+                        pdf_to_save = os.path.basename(pdf_path)
+                        
                     # Save the conversation into memory and update user session in DB
                     memory.chat_memory.add_user_message(user_input)
                     memory.chat_memory.add_ai_message(full_answer)
-                    create_or_update_user_session(user_id, pdf_name, user_input, full_answer)
+                    create_or_update_user_session(user_id, pdf_to_save, user_input, full_answer)
             except Exception as e:
                 print(f"Error in generate function: {str(e)}")
+                traceback.print_exc()
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         return Response(generate(), mimetype='text/event-stream')
     except Exception as e:
         print(f"Error in query function: {str(e)}")
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -963,475 +1155,5 @@ Only generate questions specifically about the provided content. If the content 
             "error": f"Failed to generate quiz: {str(e)}"
         }), 500
 
-# Constants
-MAX_AUDIO_FILES = 10
-MAX_IMAGES = 10
-AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio')
-IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
-
-# Ensure directories exist
-os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(IMAGE_DIR, exist_ok=True)
-
-# Initialize OpenAI client
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Available voices and models
-AVAILABLE_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
-AVAILABLE_MODELS = ["tts-1", "tts-1-hd"]
-
-def manage_audio_files():
-    """Manage audio files to maintain the maximum limit"""
-    try:
-        # Get all audio files
-        audio_files = glob.glob(os.path.join(AUDIO_DIR, '*.mp3'))
-        
-        # If we're over the limit, remove the oldest files
-        if len(audio_files) >= MAX_AUDIO_FILES:
-            # Sort files by modification time (oldest first)
-            audio_files.sort(key=os.path.getmtime)
-            # Calculate how many files to remove
-            files_to_remove = len(audio_files) - MAX_AUDIO_FILES + 1
-            # Remove the oldest files
-            for file_path in audio_files[:files_to_remove]:
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Removed old audio file: {file_path}")
-                except Exception as e:
-                    logger.error(f"Error removing old audio file {file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Error managing audio files: {e}")
-
-def manage_image_files():
-    """Manage image files to maintain the maximum limit"""
-    try:
-        # Get all image files
-        image_files = glob.glob(os.path.join(IMAGE_DIR, '*.txt'))
-        
-        # If we're over the limit, remove the oldest files
-        if len(image_files) >= MAX_IMAGES:
-            # Sort files by modification time (oldest first)
-            image_files.sort(key=os.path.getmtime)
-            # Calculate how many files to remove
-            files_to_remove = len(image_files) - MAX_IMAGES + 1
-            # Remove the oldest files
-            for file_path in image_files[:files_to_remove]:
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Removed old image file: {file_path}")
-                except Exception as e:
-                    logger.error(f"Error removing old image file {file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Error managing image files: {e}")
-
-def text_to_speech(
-    text: str,
-    voice: str = "alloy",
-    model: str = "tts-1",
-    speed: float = 1.0
-) -> bytes:
-    """
-    Convert text to speech using OpenAI's TTS API
-    Args:
-        text (str): Text to convert to speech
-        voice (str): Voice to use (alloy, echo, fable, onyx, nova, shimmer)
-        model (str): Model to use (tts-1 or tts-1-hd)
-        speed (float): Speed multiplier (0.25 to 4.0)
-    Returns:
-        bytes: Audio data
-    """
-    try:
-        # Validate inputs
-        if voice not in AVAILABLE_VOICES:
-            raise ValueError(f"Invalid voice. Must be one of: {', '.join(AVAILABLE_VOICES)}")
-        if model not in AVAILABLE_MODELS:
-            raise ValueError(f"Invalid model. Must be one of: {', '.join(AVAILABLE_MODELS)}")
-        if not 0.25 <= speed <= 4.0:
-            raise ValueError("Speed must be between 0.25 and 4.0")
-
-        logger.info(f"Generating speech for text (length: {len(text)}) with voice: {voice}, model: {model}, speed: {speed}")
-        
-        response = openai.audio.speech.create(
-            model=model,
-            voice=voice,
-            input=text,
-            speed=speed
-        )
-        
-        logger.info("Speech generation successful")
-        return response.content
-    except Exception as e:
-        logger.error(f"Error in text_to_speech: {e}")
-        raise
-
-def generate_image(
-    prompt: str,
-    size: str = "1024x1024",
-    quality: str = "standard",
-    style: str = "vivid"
-) -> str:
-    """
-    Generate an image using OpenAI's DALL-E API
-    Args:
-        prompt (str): Text description of the image to generate
-        size (str): Image size (1024x1024, 1792x1024, or 1024x1792)
-        quality (str): Image quality (standard or hd)
-        style (str): Image style (vivid or natural)
-    Returns:
-        str: URL of the generated image
-    """
-    try:
-        # Log API key status
-        if not openai.api_key:
-            logger.error("OpenAI API key is not set in generate_image function")
-            raise ValueError("OpenAI API key is not set")
-        else:
-            logger.info("OpenAI API key is set in generate_image function")
-
-        # Validate inputs
-        valid_sizes = ["1024x1024", "1792x1024", "1024x1792"]
-        if size not in valid_sizes:
-            raise ValueError(f"Invalid size. Must be one of: {', '.join(valid_sizes)}")
-        
-        if quality not in ["standard", "hd"]:
-            raise ValueError("Quality must be either 'standard' or 'hd'")
-        
-        if style not in ["vivid", "natural"]:
-            raise ValueError("Style must be either 'vivid' or 'natural'")
-
-        logger.info(f"Generating image for prompt: {prompt} with size: {size}, quality: {quality}, style: {style}")
-        
-        # Generate the image
-        logger.info("Making API call to OpenAI DALL-E...")
-        response = openai.images.generate(
-            model="dall-e-3",
-            prompt=prompt,
-            size=size,
-            quality=quality,
-            style=style,
-            n=1
-        )
-        
-        # Check if response is valid
-        if not response:
-            logger.error("No response received from OpenAI API")
-            raise ValueError("No response received from OpenAI API")
-            
-        if not response.data:
-            logger.error("No data in OpenAI API response")
-            raise ValueError("No data in OpenAI API response")
-            
-        if len(response.data) == 0:
-            logger.error("Empty data array in OpenAI API response")
-            raise ValueError("Empty data array in OpenAI API response")
-            
-        image_url = response.data[0].url
-        logger.info(f"Image generation successful. URL: {image_url}")
-        
-        return image_url
-        
-    except openai.error.OpenAIError as e:
-        logger.error(f"OpenAI API error: {str(e)}")
-        raise
-    except Exception as e:
-        logger.error(f"Error in generate_image: {str(e)}")
-        raise
-
-@app.route('/tts', methods=['POST'])
-def generate_speech():
-    """Generate speech from text using OpenAI TTS"""
-    try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({'error': 'Missing text in request'}), 400
-
-        text = data['text']
-        voice = data.get('voice', 'alloy')
-        model = data.get('model', 'tts-1')
-        speed = float(data.get('speed', 1.0))
-
-        # Generate speech
-        audio_data = text_to_speech(text, voice, model, speed)
-
-        # Create a temporary file to store the audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
-            temp_file.write(audio_data)
-            temp_file_path = temp_file.name
-
-        # Return the audio file
-        return send_file(
-            temp_file_path,
-            mimetype='audio/mpeg',
-            as_attachment=True,
-            download_name='speech.mp3'
-        )
-
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error generating speech: {e}")
-        return jsonify({'error': str(e)}), 500
-    finally:
-        # Clean up the temporary file
-        if 'temp_file_path' in locals():
-            try:
-                os.unlink(temp_file_path)
-            except Exception as e:
-                logger.error(f"Error cleaning up temp file: {e}")
-
-@app.route('/tts/stream', methods=['POST'])
-def stream_speech():
-    """Stream speech generation for real-time playback"""
-    try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return jsonify({'error': 'Missing text in request'}), 400
-
-        text = data['text']
-        voice = data.get('voice', 'alloy')
-        model = data.get('model', 'tts-1')
-        speed = float(data.get('speed', 1.0))
-
-        # Generate speech
-        audio_data = text_to_speech(text, voice, model, speed)
-        logger.info(f"Generated audio data size: {len(audio_data)} bytes")
-
-        # Save audio file for debugging
-        try:
-            # Manage existing audio files before saving new one
-            manage_audio_files()
-            
-            # Generate filename with timestamp
-            timestamp = int(time.time())
-            filename = f"tts_{timestamp}.mp3"
-            file_path = os.path.join(AUDIO_DIR, filename)
-            
-            # Save the audio file
-            with open(file_path, 'wb') as f:
-                f.write(audio_data)
-            logger.info(f"Saved audio file: {file_path}")
-        except Exception as e:
-            logger.error(f"Error saving audio file: {e}")
-            # Continue even if saving fails
-
-        # Create a response with the audio data
-        response = Response(
-            audio_data,
-            mimetype='audio/mpeg',
-            headers={
-                'Content-Type': 'audio/mpeg',
-                'Cache-Control': 'no-cache',
-                'Access-Control-Allow-Origin': '*'
-            }
-        )
-        
-        return response
-
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error streaming speech: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/tts/voices', methods=['GET'])
-def get_available_voices():
-    """Get list of available voices"""
-    return jsonify({
-        'voices': AVAILABLE_VOICES,
-        'models': AVAILABLE_MODELS
-    })
-
-@app.route('/image/generate', methods=['POST'])
-def create_image():
-    """Generate an image from text using OpenAI DALL-E"""
-    try:
-        data = request.get_json()
-        if not data or 'prompt' not in data:
-            return jsonify({'error': 'Missing prompt in request'}), 400
-
-        prompt = data['prompt']
-        size = data.get('size', '1024x1024')
-        quality = data.get('quality', 'standard')
-        style = data.get('style', 'vivid')
-
-        # Generate image
-        image_url = generate_image(prompt, size, quality, style)
-
-        # Save image URL to a file for reference
-        try:
-            # Manage existing image files before saving new one
-            manage_image_files()
-            
-            # Generate filename with timestamp
-            timestamp = int(time.time())
-            filename = f"image_{timestamp}.txt"
-            file_path = os.path.join(IMAGE_DIR, filename)
-            
-            # Save the image URL
-            with open(file_path, 'w') as f:
-                f.write(f"Prompt: {prompt}\n")
-                f.write(f"URL: {image_url}\n")
-                f.write(f"Size: {size}\n")
-                f.write(f"Quality: {quality}\n")
-                f.write(f"Style: {style}\n")
-            logger.info(f"Saved image reference: {file_path}")
-        except Exception as e:
-            logger.error(f"Error saving image reference: {e}")
-            # Continue even if saving fails
-
-        return jsonify({
-            'url': image_url,
-            'prompt': prompt,
-            'size': size,
-            'quality': quality,
-            'style': style
-        })
-
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        logger.error(f"Error generating image: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/image/sizes', methods=['GET'])
-def get_available_sizes():
-    """Get list of available image sizes"""
-    return jsonify({
-        'sizes': ["1024x1024", "1792x1024", "1024x1792"],
-        'qualities': ["standard", "hd"],
-        'styles': ["vivid", "natural"]
-    })
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'openai_api_configured': bool(openai.api_key)
-    })
-
-@app.route('/image/context', methods=['POST'])
-def generate_image_from_context():
-    """Generate an image based on conversation context and query"""
-    try:
-        logger.info("Received image generation request")
-        data = request.get_json()
-        if not data or "query" not in data:
-            logger.error("Missing query in request")
-            return jsonify({"error": "Missing 'query' in request."}), 400
-
-        user_input = data["query"]
-        pdf_name = data.get("pdf_name")
-        user_id = data.get("user_id", "anonymous")
-        user_name = data.get("user_name", "User")
-        user_email = data.get("user_email", "N/A")
-
-        logger.info(f"Processing image request for user {user_id} ({user_name})")
-
-        # Get user-specific memory and personalized prompt
-        user_data = get_user_memory(user_id, user_name, user_email)
-        memory = user_data["memory"]
-        personalized_prompt = user_data["personalized_prompt"]
-
-        # Get document context
-        relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
-        if not relevant_chunks:
-            document_context = "No relevant context found."
-            logger.warning("No relevant chunks found for image generation")
-        else:
-            fallback_note = ""
-            if used_fallback:
-                fallback_note = (
-                    "**Note:** No relevant content found in the current lecture. "
-                    "The following information comes from other lectures.\n\n"
-                )
-            
-            # Format chunks with proper page references
-            formatted_chunks = []
-            for chunk in relevant_chunks:
-                page_number = chunk['metadata'].get('page', 'unknown')
-                pdf_source = chunk['metadata'].get('pdf_name', '')
-                content = chunk['content']
-                page_info = f"[Page {page_number}](page://{page_number})"
-                if used_fallback:
-                    page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
-                formatted_chunks.append(f"{page_info}: {content}")
-            
-            document_context = fallback_note + "\n---\n".join(formatted_chunks)
-
-        # Get conversation history
-        chat_history_str = "\n".join(
-            msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
-        )
-
-        # Create a prompt for image generation that includes context
-        image_prompt = f"""Based on the following conversation and document context, generate a detailed image description:
-
-Document Context:
-{document_context}
-
-Conversation History:
-{chat_history_str}
-
-User Query:
-{user_input}
-
-Create a detailed, vivid description for an image that would help illustrate or explain the concepts being discussed. 
-The description should be specific and detailed, focusing on visual elements that would make the image informative and engaging.
-"""
-
-        logger.info(f"Generated image prompt: {image_prompt}")
-
-        # Generate image using the context-aware prompt
-        try:
-            # Get image parameters from request or use defaults
-            size = data.get('size', '1024x1024')
-            quality = data.get('quality', 'standard')
-            style = data.get('style', 'vivid')
-
-            logger.info(f"Generating image with parameters: size={size}, quality={quality}, style={style}")
-
-            # Generate the image
-            image_url = generate_image(image_prompt, size, quality, style)
-            logger.info(f"Successfully generated image: {image_url}")
-
-            # Save image reference
-            try:
-                manage_image_files()
-                timestamp = int(time.time())
-                filename = f"image_{timestamp}.txt"
-                file_path = os.path.join(IMAGE_DIR, filename)
-                
-                with open(file_path, 'w') as f:
-                    f.write(f"Context Prompt: {image_prompt}\n")
-                    f.write(f"URL: {image_url}\n")
-                    f.write(f"Size: {size}\n")
-                    f.write(f"Quality: {quality}\n")
-                    f.write(f"Style: {style}\n")
-                logger.info(f"Saved image reference: {file_path}")
-            except Exception as e:
-                logger.error(f"Error saving image reference: {e}")
-
-            # Return the image URL and details
-            response_data = {
-                'url': image_url,
-                'prompt': image_prompt,
-                'size': size,
-                'quality': quality,
-                'style': style
-            }
-            
-            logger.info(f"Sending response: {response_data}")
-            return jsonify(response_data)
-
-        except Exception as e:
-            logger.error(f"Error generating image: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    except Exception as e:
-        logger.error(f"Error in image generation from context: {e}")
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    port = int(os.getenv('FLASK_PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+if __name__ == "__main__":
+    app.run(debug=True)

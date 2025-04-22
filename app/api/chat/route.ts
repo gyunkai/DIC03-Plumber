@@ -7,14 +7,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     // Extract all necessary fields, including quiz_mode
-    const { message, pdfName, userId, userName, userEmail, quiz_mode} = body;
-    const  pdf_url = pdfName; 
+    const { message, pdfName, userId, userName, userEmail, quiz_mode, pageNumber } = body;
+    const pdf_url = pdfName;
     console.log(`PDF URL: ${pdf_url}`);
 
     console.log(`Received message: ${message}`);
     console.log(`Original PDF Name: ${pdfName}`);
     console.log(`User: ${userId}, ${userName}, ${userEmail}`);
-    
+    console.log(`Current Page: ${pageNumber}`);
+
     // Extract just the filename from the path if it exists
     let filename = pdfName;
     if (pdfName && pdfName.includes('/')) {
@@ -31,13 +32,14 @@ export async function POST(req: NextRequest) {
     // Forward user message along with all user info and the quiz_mode flag to Kiwi Bot
     const response = await axios.post(KIWI_BOT_URL, {
       query: message,
-      pdf_url: pdf_url, 
+      pdf_url: pdf_url,
       pdf_name: filename,
       use_all_chunks: true,
       user_id: userId,
       user_name: userName,
       user_email: userEmail,
       quiz_mode: quiz_mode, // Include quiz_mode flag here
+      pageNumber: pageNumber, // 添加页码信息
     });
 
     // Return Kiwi Bot's response (should include an "answer" property)
