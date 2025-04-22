@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, send_file
 from dotenv import load_dotenv, find_dotenv
 import psycopg2
 from psycopg2.extras import Json
@@ -13,12 +13,18 @@ from langchain.prompts import PromptTemplate
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Optional
+import openai
+import tempfile
+import io
 
 # Load environment variables
 env_path = find_dotenv()
 load_dotenv(env_path, override=True)
 
 app = Flask(__name__)
+
+# Initialize OpenAI client
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Initialize OpenAI LLM
 llm = ChatOpenAI(
@@ -235,6 +241,94 @@ def get_learning_progress():
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+def text_to_speech(text: str, voice: str = "alloy", model: str = "tts-1") -> bytes:
+    """
+    Convert text to speech using OpenAI's TTS API
+    Args:
+        text (str): Text to convert to speech
+        voice (str): Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+        model (str): Model to use (tts-1 or tts-1-hd)
+    Returns:
+        bytes: Audio data
+    """
+    try:
+        response = openai.audio.speech.create(
+            model=model,
+            voice=voice,
+            input=text
+        )
+        return response.content
+    except Exception as e:
+        print(f"Error in text_to_speech: {e}")
+        raise
+
+@app.route('/analytics/tts', methods=['POST'])
+def generate_speech():
+    """Generate speech from text using OpenAI TTS"""
+    try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': 'Missing text in request'}), 400
+
+        text = data['text']
+        voice = data.get('voice', 'alloy')
+        model = data.get('model', 'tts-1')
+
+        # Generate speech
+        audio_data = text_to_speech(text, voice, model)
+
+        # Create a temporary file to store the audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            temp_file.write(audio_data)
+            temp_file_path = temp_file.name
+
+        # Return the audio file
+        return send_file(
+            temp_file_path,
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name='speech.mp3'
+        )
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        # Clean up the temporary file
+        if 'temp_file_path' in locals():
+            try:
+                os.unlink(temp_file_path)
+            except Exception as e:
+                print(f"Error cleaning up temp file: {e}")
+
+@app.route('/analytics/tts/stream', methods=['POST'])
+def stream_speech():
+    """Stream speech generation for real-time playback"""
+    try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': 'Missing text in request'}), 400
+
+        text = data['text']
+        voice = data.get('voice', 'alloy')
+        model = data.get('model', 'tts-1')
+
+        # Generate speech
+        audio_data = text_to_speech(text, voice, model)
+
+        # Create a response with the audio data
+        return Response(
+            audio_data,
+            mimetype='audio/mpeg',
+            headers={
+                'Content-Disposition': 'attachment; filename=speech.mp3',
+                'Cache-Control': 'no-cache',
+                'Transfer-Encoding': 'chunked'
+            }
+        )
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('ANALYTICS_PORT', 5001))

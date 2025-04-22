@@ -1,6 +1,6 @@
 import os
 import glob
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
@@ -9,7 +9,7 @@ import numpy as np
 import json
 from psycopg2.extras import Json
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 import psycopg2
 from psycopg2.extras import Json
 from urllib.parse import urlparse
@@ -18,8 +18,61 @@ from pathlib import Path
 import time
 import traceback
 import uuid
+import openai
+import tempfile
+from flask_cors import CORS
+import logging
 
-import re
+# System prompt for the bot
+SYSTEM_PROMPT = """You are Kiwi, an AI assistant specialized in helping students with their academic studies. 
+You have access to the following tools and capabilities:
+
+1. Text-to-Speech (TTS):
+   - You can generate speech from text using different voices and models
+   - Available voices: alloy, echo, fable, onyx, nova, shimmer
+   - Available models: tts-1, tts-1-hd
+   - Speed can be adjusted from 0.25 to 4.0
+
+2. Image Generation:
+   - You can generate images using DALL-E 3
+   - Available sizes: 1024x1024, 1792x1024, 1024x1792
+   - Available qualities: standard, hd
+   - Available styles: natural, vivid
+   - Images are generated based on the conversation context and user's request
+
+When a user requests an image, you should:
+1. Understand the context from the conversation
+2. Generate a detailed prompt that captures the user's request
+3. Use the appropriate size, quality, and style based on the request
+4. Return the generated image URL and prompt
+
+For example, if a user asks "generate an image of a neural network", you should:
+1. Consider any previous context about neural networks from the conversation
+2. Create a detailed prompt like "A detailed illustration of a neural network with interconnected nodes and layers, showing data flow and activation patterns, in a modern scientific style"
+3. Use appropriate parameters (e.g., standard quality, natural style)
+4. Return the image URL and the prompt used
+
+Remember to:
+- Always consider the conversation context when generating images
+- Create detailed, specific prompts for better results
+- Use appropriate parameters based on the request
+- Be creative but stay within academic and professional boundaries
+
+Your primary goal is to help students understand complex concepts through both text and visual explanations.
+
+Always remember personal details provided by the user, especially their name. If the user states 'My name is ...', store it, and when asked, reply with the name they've provided. 
+Here you are tasked with answering questions based on the document provided which is for the course which will be provided with. 
+Please prioritize answering questions based on the document. But then give them more context for better understanding based on the document as well. 
+For each answer, cite your sources from the pages using the format add 1 to the page number [Page X](page://X) — this will be converted into clickable links, start counting from 1.
+The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided.
+Always include these page references when providing information from the document. 
+Please space out paragraphs.
+Make your answers helpful and informative while clearly indicating which page contains the information.
+If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."""
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Find and load .env file
 env_path = find_dotenv()
@@ -37,8 +90,27 @@ print("DATABASE_URL3:", os.getenv("DATABASE_URL3"))
 os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 os.environ["DATABASE_URL3"] = os.getenv("DATABASE_URL3")
 
+# Initialize OpenAI client with explicit API key
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    logger.error("OpenAI API key is not set in environment variables")
+else:
+    logger.info("OpenAI API key is set and ready to use")
+
 # Initialize Flask app
 app = Flask(__name__)
+
+# Configure CORS to allow requests from Next.js development server
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "http://localhost:3000",  # Next.js development server
+            "http://127.0.0.1:3000",
+        ],
+        "methods": ["POST", "GET", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Accept"],
+    }
+})
 
 # ---------- Global Setup ----------
 # Check for API key
@@ -271,6 +343,7 @@ system_prompt = (
     "For each answer, cite your sources from the pages using the format [Page X](page://X) — this will be converted into clickable links, start counting from 1."
     "The user might ask about content on a specific page of the document, look through it and answer them accordingly. You have access to that page since it is provided."
     "Always include these page references when providing information from the document. "
+    "Please space out paragrahs"
     "Make your answers helpful and informative while clearly indicating which page contains the information."
     "If no relevant content is found in the current document, you may reference content from other lectures if available, and clearly indicate which lecture and page it came from."
 
@@ -606,6 +679,7 @@ def query():
                         msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
                     )
                     final_prompt = (
+                        f"{SYSTEM_PROMPT}\n\n"  # Add system prompt
                         f"{personalized_prompt}\n\n"
                         f"Pdf key: {pdf_url}\n\n"
                         f"Document Context:\n{document_context}\n\n"
@@ -889,5 +963,475 @@ Only generate questions specifically about the provided content. If the content 
             "error": f"Failed to generate quiz: {str(e)}"
         }), 500
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Constants
+MAX_AUDIO_FILES = 10
+MAX_IMAGES = 10
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio')
+IMAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
+
+# Ensure directories exist
+os.makedirs(AUDIO_DIR, exist_ok=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+# Initialize OpenAI client
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Available voices and models
+AVAILABLE_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+AVAILABLE_MODELS = ["tts-1", "tts-1-hd"]
+
+def manage_audio_files():
+    """Manage audio files to maintain the maximum limit"""
+    try:
+        # Get all audio files
+        audio_files = glob.glob(os.path.join(AUDIO_DIR, '*.mp3'))
+        
+        # If we're over the limit, remove the oldest files
+        if len(audio_files) >= MAX_AUDIO_FILES:
+            # Sort files by modification time (oldest first)
+            audio_files.sort(key=os.path.getmtime)
+            # Calculate how many files to remove
+            files_to_remove = len(audio_files) - MAX_AUDIO_FILES + 1
+            # Remove the oldest files
+            for file_path in audio_files[:files_to_remove]:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Removed old audio file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error removing old audio file {file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Error managing audio files: {e}")
+
+def manage_image_files():
+    """Manage image files to maintain the maximum limit"""
+    try:
+        # Get all image files
+        image_files = glob.glob(os.path.join(IMAGE_DIR, '*.txt'))
+        
+        # If we're over the limit, remove the oldest files
+        if len(image_files) >= MAX_IMAGES:
+            # Sort files by modification time (oldest first)
+            image_files.sort(key=os.path.getmtime)
+            # Calculate how many files to remove
+            files_to_remove = len(image_files) - MAX_IMAGES + 1
+            # Remove the oldest files
+            for file_path in image_files[:files_to_remove]:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Removed old image file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error removing old image file {file_path}: {e}")
+    except Exception as e:
+        logger.error(f"Error managing image files: {e}")
+
+def text_to_speech(
+    text: str,
+    voice: str = "alloy",
+    model: str = "tts-1",
+    speed: float = 1.0
+) -> bytes:
+    """
+    Convert text to speech using OpenAI's TTS API
+    Args:
+        text (str): Text to convert to speech
+        voice (str): Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+        model (str): Model to use (tts-1 or tts-1-hd)
+        speed (float): Speed multiplier (0.25 to 4.0)
+    Returns:
+        bytes: Audio data
+    """
+    try:
+        # Validate inputs
+        if voice not in AVAILABLE_VOICES:
+            raise ValueError(f"Invalid voice. Must be one of: {', '.join(AVAILABLE_VOICES)}")
+        if model not in AVAILABLE_MODELS:
+            raise ValueError(f"Invalid model. Must be one of: {', '.join(AVAILABLE_MODELS)}")
+        if not 0.25 <= speed <= 4.0:
+            raise ValueError("Speed must be between 0.25 and 4.0")
+
+        logger.info(f"Generating speech for text (length: {len(text)}) with voice: {voice}, model: {model}, speed: {speed}")
+        
+        response = openai.audio.speech.create(
+            model=model,
+            voice=voice,
+            input=text,
+            speed=speed
+        )
+        
+        logger.info("Speech generation successful")
+        return response.content
+    except Exception as e:
+        logger.error(f"Error in text_to_speech: {e}")
+        raise
+
+def generate_image(
+    prompt: str,
+    size: str = "1024x1024",
+    quality: str = "standard",
+    style: str = "vivid"
+) -> str:
+    """
+    Generate an image using OpenAI's DALL-E API
+    Args:
+        prompt (str): Text description of the image to generate
+        size (str): Image size (1024x1024, 1792x1024, or 1024x1792)
+        quality (str): Image quality (standard or hd)
+        style (str): Image style (vivid or natural)
+    Returns:
+        str: URL of the generated image
+    """
+    try:
+        # Log API key status
+        if not openai.api_key:
+            logger.error("OpenAI API key is not set in generate_image function")
+            raise ValueError("OpenAI API key is not set")
+        else:
+            logger.info("OpenAI API key is set in generate_image function")
+
+        # Validate inputs
+        valid_sizes = ["1024x1024", "1792x1024", "1024x1792"]
+        if size not in valid_sizes:
+            raise ValueError(f"Invalid size. Must be one of: {', '.join(valid_sizes)}")
+        
+        if quality not in ["standard", "hd"]:
+            raise ValueError("Quality must be either 'standard' or 'hd'")
+        
+        if style not in ["vivid", "natural"]:
+            raise ValueError("Style must be either 'vivid' or 'natural'")
+
+        logger.info(f"Generating image for prompt: {prompt} with size: {size}, quality: {quality}, style: {style}")
+        
+        # Generate the image
+        logger.info("Making API call to OpenAI DALL-E...")
+        response = openai.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size=size,
+            quality=quality,
+            style=style,
+            n=1
+        )
+        
+        # Check if response is valid
+        if not response:
+            logger.error("No response received from OpenAI API")
+            raise ValueError("No response received from OpenAI API")
+            
+        if not response.data:
+            logger.error("No data in OpenAI API response")
+            raise ValueError("No data in OpenAI API response")
+            
+        if len(response.data) == 0:
+            logger.error("Empty data array in OpenAI API response")
+            raise ValueError("Empty data array in OpenAI API response")
+            
+        image_url = response.data[0].url
+        logger.info(f"Image generation successful. URL: {image_url}")
+        
+        return image_url
+        
+    except openai.error.OpenAIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error in generate_image: {str(e)}")
+        raise
+
+@app.route('/tts', methods=['POST'])
+def generate_speech():
+    """Generate speech from text using OpenAI TTS"""
+    try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': 'Missing text in request'}), 400
+
+        text = data['text']
+        voice = data.get('voice', 'alloy')
+        model = data.get('model', 'tts-1')
+        speed = float(data.get('speed', 1.0))
+
+        # Generate speech
+        audio_data = text_to_speech(text, voice, model, speed)
+
+        # Create a temporary file to store the audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            temp_file.write(audio_data)
+            temp_file_path = temp_file.name
+
+        # Return the audio file
+        return send_file(
+            temp_file_path,
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name='speech.mp3'
+        )
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error generating speech: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        # Clean up the temporary file
+        if 'temp_file_path' in locals():
+            try:
+                os.unlink(temp_file_path)
+            except Exception as e:
+                logger.error(f"Error cleaning up temp file: {e}")
+
+@app.route('/tts/stream', methods=['POST'])
+def stream_speech():
+    """Stream speech generation for real-time playback"""
+    try:
+        data = request.get_json()
+        if not data or 'text' not in data:
+            return jsonify({'error': 'Missing text in request'}), 400
+
+        text = data['text']
+        voice = data.get('voice', 'alloy')
+        model = data.get('model', 'tts-1')
+        speed = float(data.get('speed', 1.0))
+
+        # Generate speech
+        audio_data = text_to_speech(text, voice, model, speed)
+        logger.info(f"Generated audio data size: {len(audio_data)} bytes")
+
+        # Save audio file for debugging
+        try:
+            # Manage existing audio files before saving new one
+            manage_audio_files()
+            
+            # Generate filename with timestamp
+            timestamp = int(time.time())
+            filename = f"tts_{timestamp}.mp3"
+            file_path = os.path.join(AUDIO_DIR, filename)
+            
+            # Save the audio file
+            with open(file_path, 'wb') as f:
+                f.write(audio_data)
+            logger.info(f"Saved audio file: {file_path}")
+        except Exception as e:
+            logger.error(f"Error saving audio file: {e}")
+            # Continue even if saving fails
+
+        # Create a response with the audio data
+        response = Response(
+            audio_data,
+            mimetype='audio/mpeg',
+            headers={
+                'Content-Type': 'audio/mpeg',
+                'Cache-Control': 'no-cache',
+                'Access-Control-Allow-Origin': '*'
+            }
+        )
+        
+        return response
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error streaming speech: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/tts/voices', methods=['GET'])
+def get_available_voices():
+    """Get list of available voices"""
+    return jsonify({
+        'voices': AVAILABLE_VOICES,
+        'models': AVAILABLE_MODELS
+    })
+
+@app.route('/image/generate', methods=['POST'])
+def create_image():
+    """Generate an image from text using OpenAI DALL-E"""
+    try:
+        data = request.get_json()
+        if not data or 'prompt' not in data:
+            return jsonify({'error': 'Missing prompt in request'}), 400
+
+        prompt = data['prompt']
+        size = data.get('size', '1024x1024')
+        quality = data.get('quality', 'standard')
+        style = data.get('style', 'vivid')
+
+        # Generate image
+        image_url = generate_image(prompt, size, quality, style)
+
+        # Save image URL to a file for reference
+        try:
+            # Manage existing image files before saving new one
+            manage_image_files()
+            
+            # Generate filename with timestamp
+            timestamp = int(time.time())
+            filename = f"image_{timestamp}.txt"
+            file_path = os.path.join(IMAGE_DIR, filename)
+            
+            # Save the image URL
+            with open(file_path, 'w') as f:
+                f.write(f"Prompt: {prompt}\n")
+                f.write(f"URL: {image_url}\n")
+                f.write(f"Size: {size}\n")
+                f.write(f"Quality: {quality}\n")
+                f.write(f"Style: {style}\n")
+            logger.info(f"Saved image reference: {file_path}")
+        except Exception as e:
+            logger.error(f"Error saving image reference: {e}")
+            # Continue even if saving fails
+
+        return jsonify({
+            'url': image_url,
+            'prompt': prompt,
+            'size': size,
+            'quality': quality,
+            'style': style
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error generating image: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/image/sizes', methods=['GET'])
+def get_available_sizes():
+    """Get list of available image sizes"""
+    return jsonify({
+        'sizes': ["1024x1024", "1792x1024", "1024x1792"],
+        'qualities': ["standard", "hd"],
+        'styles': ["vivid", "natural"]
+    })
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'openai_api_configured': bool(openai.api_key)
+    })
+
+@app.route('/image/context', methods=['POST'])
+def generate_image_from_context():
+    """Generate an image based on conversation context and query"""
+    try:
+        logger.info("Received image generation request")
+        data = request.get_json()
+        if not data or "query" not in data:
+            logger.error("Missing query in request")
+            return jsonify({"error": "Missing 'query' in request."}), 400
+
+        user_input = data["query"]
+        pdf_name = data.get("pdf_name")
+        user_id = data.get("user_id", "anonymous")
+        user_name = data.get("user_name", "User")
+        user_email = data.get("user_email", "N/A")
+
+        logger.info(f"Processing image request for user {user_id} ({user_name})")
+
+        # Get user-specific memory and personalized prompt
+        user_data = get_user_memory(user_id, user_name, user_email)
+        memory = user_data["memory"]
+        personalized_prompt = user_data["personalized_prompt"]
+
+        # Get document context
+        relevant_chunks, used_fallback = get_relevant_chunks(user_input, pdf_name)
+        if not relevant_chunks:
+            document_context = "No relevant context found."
+            logger.warning("No relevant chunks found for image generation")
+        else:
+            fallback_note = ""
+            if used_fallback:
+                fallback_note = (
+                    "**Note:** No relevant content found in the current lecture. "
+                    "The following information comes from other lectures.\n\n"
+                )
+            
+            # Format chunks with proper page references
+            formatted_chunks = []
+            for chunk in relevant_chunks:
+                page_number = chunk['metadata'].get('page', 'unknown')
+                pdf_source = chunk['metadata'].get('pdf_name', '')
+                content = chunk['content']
+                page_info = f"[Page {page_number}](page://{page_number})"
+                if used_fallback:
+                    page_info = f"[{pdf_source} - Page {page_number}](page://{page_number})"
+                formatted_chunks.append(f"{page_info}: {content}")
+            
+            document_context = fallback_note + "\n---\n".join(formatted_chunks)
+
+        # Get conversation history
+        chat_history_str = "\n".join(
+            msg.content for msg in memory.chat_memory.messages if not isinstance(msg, SystemMessage)
+        )
+
+        # Create a prompt for image generation that includes context
+        image_prompt = f"""Based on the following conversation and document context, generate a detailed image description:
+
+Document Context:
+{document_context}
+
+Conversation History:
+{chat_history_str}
+
+User Query:
+{user_input}
+
+Create a detailed, vivid description for an image that would help illustrate or explain the concepts being discussed. 
+The description should be specific and detailed, focusing on visual elements that would make the image informative and engaging.
+"""
+
+        logger.info(f"Generated image prompt: {image_prompt}")
+
+        # Generate image using the context-aware prompt
+        try:
+            # Get image parameters from request or use defaults
+            size = data.get('size', '1024x1024')
+            quality = data.get('quality', 'standard')
+            style = data.get('style', 'vivid')
+
+            logger.info(f"Generating image with parameters: size={size}, quality={quality}, style={style}")
+
+            # Generate the image
+            image_url = generate_image(image_prompt, size, quality, style)
+            logger.info(f"Successfully generated image: {image_url}")
+
+            # Save image reference
+            try:
+                manage_image_files()
+                timestamp = int(time.time())
+                filename = f"image_{timestamp}.txt"
+                file_path = os.path.join(IMAGE_DIR, filename)
+                
+                with open(file_path, 'w') as f:
+                    f.write(f"Context Prompt: {image_prompt}\n")
+                    f.write(f"URL: {image_url}\n")
+                    f.write(f"Size: {size}\n")
+                    f.write(f"Quality: {quality}\n")
+                    f.write(f"Style: {style}\n")
+                logger.info(f"Saved image reference: {file_path}")
+            except Exception as e:
+                logger.error(f"Error saving image reference: {e}")
+
+            # Return the image URL and details
+            response_data = {
+                'url': image_url,
+                'prompt': image_prompt,
+                'size': size,
+                'quality': quality,
+                'style': style
+            }
+            
+            logger.info(f"Sending response: {response_data}")
+            return jsonify(response_data)
+
+        except Exception as e:
+            logger.error(f"Error generating image: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    except Exception as e:
+        logger.error(f"Error in image generation from context: {e}")
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    port = int(os.getenv('FLASK_PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)

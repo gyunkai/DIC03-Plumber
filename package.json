@@ -24,6 +24,7 @@
     "katex": "^0.16.21",
     "lucide-react": "^0.475.0",
     "next": "^15.1.7",
+    "node-fetch": "^2.7.0",
     "openai": "^4.87.3",
     "postcss": "^8.5.3",
     "react": "^19.0.0",
