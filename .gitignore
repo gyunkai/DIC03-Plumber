@@ -11,3 +11,8 @@ Thumbs.db
 
 # TypeScript
 next-env.d.ts
+
+
+__pycache__/
+
+venv/
