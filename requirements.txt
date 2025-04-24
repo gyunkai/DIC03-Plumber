@@ -1,0 +1,8 @@
+flask
+langchain_openai
+psycopg2-binary
+python-dotenv
+gunicorn
+numpy
+langchain
+openai

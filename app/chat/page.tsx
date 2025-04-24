@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-
 import {
   Send,
   ChevronLeft,
@@ -62,7 +61,7 @@ export default function ChatPage() {
     "machine-learning"
   );
 
-  // ── NEW: Quiz Mode States ─────────────────────────
+  // ── Quiz Mode States ─────────────────────────
   // Quiz mode states (replace the hard-coded ones with dynamic ones)
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
@@ -80,9 +79,9 @@ export default function ChatPage() {
     "easy" | "medium" | "hard"
   >("medium");
   const [showQuizSettings, setShowQuizSettings] = useState(true);
-  // ── End NEW: Quiz Mode States ───────────────────────
+  // ── End Quiz Mode States ───────────────────────
 
-  // ── NEW: Handle Quiz Answer Click ───────────────────
+  // ── Handle Quiz Answer Click ───────────────────
   // This function checks if the selected answer is correct.
   const handleQuizAnswer = (selectedOption: string) => {
     if (!quizQuestions || quizQuestions.length === 0) return;
@@ -103,7 +102,7 @@ export default function ChatPage() {
     }
   };
 
-  // ── NEW: Session History ─────────────────────────
+  // ── Session History ─────────────────────────
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const courses = [
@@ -120,7 +119,6 @@ export default function ChatPage() {
       name: "Linear Algebra",
       lectures: Array.from({ length: 28 }, (_, i) => ({
         name: `LA Lecture ${i + 1}`,
-
         key: `lapdf/Lecture ${i + 1}.pdf`,
       })),
     },
@@ -137,14 +135,12 @@ export default function ChatPage() {
       name: "Multivariable Calculus",
       lectures: Array.from({ length: 27 }, (_, i) => ({
         name: `Calculus Lecture ${i + 1}`,
-
         key: `mulpdf/lecture ${i + 1}.pdf`,
       })),
     },
   ];
 
   // Fetch Chat history
-
   const [sessionHistory, setSessionHistory] = useState<any[]>([]);
 
   const fetchSessionHistory = async () => {
@@ -310,7 +306,7 @@ export default function ChatPage() {
       console.log("📦 Fetching session history for user:", user.id);
       fetchSessionHistory();
     }
-  }, [user]); // ⬅️ only runs when user is set
+  }, [user]);
 
   // Fetch PDF URL when selected PDF changes.
   useEffect(() => {
@@ -337,10 +333,18 @@ export default function ChatPage() {
     fetchPdfUrl();
   }, [selectedPdf]);
 
-  // Load chat messages when selected PDF changes.
+  // Load chat messages when selected PDF changes, with option to keep history
   useEffect(() => {
     async function loadChatMessages() {
       if (!selectedPdf) return;
+
+      // 如果已有聊天记录，则保留它们，不重新加载
+      // 只有在明确设置了新会话标志或初始加载时才清空聊天记录
+      if (messages.length > 0) {
+        console.log("保留现有聊天记录，切换PDF不会重置聊天");
+        return;
+      }
+
       try {
         const response = await fetch(
           `/api/chat/messages?pdfKey=${encodeURIComponent(selectedPdf)}`
@@ -364,6 +368,10 @@ export default function ChatPage() {
     if (!user || !selectedPdf) return;
 
     try {
+      // 明确重置聊天记录
+      setMessages([]);
+      console.log("用户手动开始了新会话，已清空聊天记录");
+
       const response = await fetch("/api/session/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -375,7 +383,6 @@ export default function ChatPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setMessages([]); // reset UI
         fetchSessionHistory(); // refresh session list
       } else {
         console.error("Failed to start new session");
@@ -578,7 +585,7 @@ export default function ChatPage() {
     return `/api/pdf?key=${encodeURIComponent(key)}`;
   };
 
-  // ── NEW: Toggle Quiz Mode ──
+  // ── Toggle Quiz Mode ──
   // Toggles between chat mode and quiz mode and clears previous quiz feedback.
   const toggleQuizMode = () => {
     const newQuizMode = !isQuizMode;
@@ -592,7 +599,7 @@ export default function ChatPage() {
     }
   };
 
-  // ── NEW: Generate Quiz Function ──
+  // ── Generate Quiz Function ──
   // Calls the backend API to generate quiz questions.
   const generateQuiz = async () => {
     if (!selectedPdf) return;
@@ -699,7 +706,7 @@ export default function ChatPage() {
     }
   };
 
-  // ── NEW: Next Question Function ──
+  // ── Next Question Function ──
   // Moves to the next question in the quiz.
   const handleNextQuestion = () => {
     if (currentQuestionIndex < quizQuestions.length - 1) {
@@ -708,7 +715,7 @@ export default function ChatPage() {
     }
   };
 
-  // ── NEW: Previous Question Function ──
+  // ── Previous Question Function ──
   // Moves to the previous question in the quiz.
   const handlePreviousQuestion = () => {
     if (currentQuestionIndex > 0) {
@@ -753,64 +760,134 @@ export default function ChatPage() {
 
   // 修改PDF加载完成处理函数，将脚本注入到iframe中
   const handlePdfLoad = () => {
-    console.log("PDF.js viewer loaded");
-    setPdfLoading(false);
-
-    // 设置初始页码为1
-    console.log("主动设置初始页码为1");
-    setCurrentPageNumber(1);
+    console.log("PDF已加载，添加监听脚本");
 
     try {
-      // 获取iframe元素
       const iframe = document.getElementById('pdfjs-iframe') as HTMLIFrameElement;
+      if (iframe && iframe.contentWindow) {
+        // 使用外部脚本文件而不是内联脚本
+        const script = document.createElement('script');
+        script.src = '/js/pdf-page-direct-listener.js';
+        script.async = true;
 
-      if (!iframe || !iframe.contentWindow || !iframe.contentDocument) {
-        console.error("无法获取PDF iframe或其内容");
-        return;
+        // 添加脚本到iframe的document
+        iframe.contentDocument?.head.appendChild(script);
+
+        console.log("📤 已向PDF Viewer注入页面监听和高亮脚本");
       }
-
-      console.log("成功获取PDF iframe");
-
-      // 创建脚本元素
-      const script = document.createElement("script");
-      script.src = `/js/pdf-page-direct-listener.js?t=${new Date().getTime()}`;
-
-      // 将脚本添加到iframe的文档中，而不是主文档
-      iframe.contentDocument.body.appendChild(script);
-
-      console.log("已将PDF页面监听脚本注入到iframe中");
-
-      return () => {
-        try {
-          if (iframe && iframe.contentDocument) {
-            const scriptElement = iframe.contentDocument.querySelector('script[src*="pdf-page-direct-listener.js"]');
-            if (scriptElement && scriptElement.parentNode) {
-              scriptElement.parentNode.removeChild(scriptElement);
-            }
-          }
-        } catch (e) {
-          console.error("移除iframe中的脚本时出错:", e);
-        }
-      };
     } catch (e) {
       console.error("在iframe中添加脚本时出错:", e);
     }
   };
 
-  // 添加一个测试页码更新的函数
-  const testPageChange = () => {
-    const randomPage = Math.floor(Math.random() * 10) + 1;
-    console.log("🧪 测试页码更新 - 发送随机页码:", randomPage);
+  // 修改PDF变更事件处理函数
+  useEffect(() => {
+    const handlePdfChange = (event: CustomEvent) => {
+      console.log("📚 收到PDF变更事件:", event.detail);
+      const { pdfPath, page } = event.detail;
 
-    // 手动触发一个页码更新事件
-    const testEvent = {
-      type: "PDF_PAGE_CHANGE",
-      page: randomPage,
-      total: 100
+      // 找到匹配的PDF并选择它
+      if (pdfPath) {
+        // 去掉public/前缀，如果有的话
+        const normalizedPath = pdfPath.startsWith('public/')
+          ? pdfPath.substring(7)
+          : pdfPath;
+
+        console.log("🔍 查找PDF:", normalizedPath);
+
+        // 尝试精确匹配
+        let found = false;
+        let foundCourse = null;
+        let foundLecture = null;
+
+        // 首先尝试完全匹配
+        for (const course of courses) {
+          const lecture = course.lectures.find(l => l.key === normalizedPath);
+          if (lecture) {
+            console.log("✅ 找到完全匹配:", course.id, lecture.key);
+            foundCourse = course;
+            foundLecture = lecture;
+            found = true;
+            break;
+          }
+        }
+
+        // 如果完全匹配失败，尝试不区分大小写
+        if (!found) {
+          const lowerPath = normalizedPath.toLowerCase();
+          for (const course of courses) {
+            const lecture = course.lectures.find(l => l.key.toLowerCase() === lowerPath);
+            if (lecture) {
+              console.log("✅ 找到不区分大小写匹配:", course.id, lecture.key);
+              foundCourse = course;
+              foundLecture = lecture;
+              found = true;
+              break;
+            }
+          }
+        }
+
+        // 如果上述都失败，尝试部分匹配（处理路径格式差异）
+        if (!found) {
+          const filename = normalizedPath.split('/').pop() || '';
+          console.log("🔍 尝试通过文件名匹配:", filename);
+
+          for (const course of courses) {
+            // 从课程讲义中找出可能的匹配
+            const possibleLectures = course.lectures.filter(l => {
+              const lectureFilename = l.key.split('/').pop() || '';
+              // 比较文件名（不区分大小写）
+              return lectureFilename.toLowerCase() === filename.toLowerCase();
+            });
+
+            if (possibleLectures.length > 0) {
+              console.log("✅ 通过文件名找到匹配:", course.id, possibleLectures[0].key);
+              foundCourse = course;
+              foundLecture = possibleLectures[0];
+              found = true;
+              break;
+            }
+          }
+        }
+
+        // 如果找到匹配，设置课程和PDF
+        if (found && foundCourse && foundLecture) {
+          // 先设置课程
+          setSelectedCourse(foundCourse.id);
+          // 然后设置PDF
+          setSelectedPdf(foundLecture.key);
+
+          // 如果指定了页码，等PDF加载完后跳转
+          if (page && typeof page === 'number') {
+            // 增加延迟时间，给PDF更多加载时间
+            const loadDelay = 2000; // 2秒
+            console.log(`⏳ 等待 ${loadDelay}ms 后尝试跳转到页面 ${page}`);
+            setTimeout(() => {
+              const iframe = document.getElementById('pdfjs-iframe') as HTMLIFrameElement;
+              if (iframe && iframe.contentWindow) {
+                console.log(`🚀 发送跳转消息到iframe: 页面 ${page}`);
+                iframe.contentWindow.postMessage({ type: "PDF_SCROLL_TO_PAGE", page }, "*");
+              } else {
+                console.error("❌ 无法找到PDF iframe或其窗口，无法发送跳转消息");
+              }
+            }, loadDelay);
+          }
+        } else {
+          console.error("❌ 未找到匹配的PDF:", normalizedPath);
+        }
+      }
     };
 
-    window.postMessage(testEvent, "*");
-  };
+    console.log("📌 设置PDF变更事件监听器");
+
+    // 添加自定义事件监听器
+    window.addEventListener('CHANGE_PDF', handlePdfChange as EventListener);
+
+    return () => {
+      console.log("🗑️ 清除PDF变更事件监听器");
+      window.removeEventListener('CHANGE_PDF', handlePdfChange as EventListener);
+    };
+  }, [courses]);
 
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
@@ -818,13 +895,6 @@ export default function ChatPage() {
       <div className="bg-white shadow-md border-b border-gray-200 p-4 flex justify-between items-center">
         <div className="flex items-center">
           <h1 className="text-2xl font-bold text-gray-800 mr-4">Chat Interface</h1>
-          <button
-            onClick={testPageChange}
-            className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
-          >
-            测试页码更新
-          </button>
-          <span className="ml-2 text-sm text-gray-500">当前页码: {currentPageNumber}</span>
         </div>
         {/* User info and logout button */}
         {userLoading ? (
@@ -883,12 +953,10 @@ export default function ChatPage() {
               <p className="text-gray-500">No session history available.</p>
             ) : (
               sessionHistory.map((session, idx) => {
-                // Debug log for each session object
                 console.log("🔍 Session object:", session);
                 return (
                   <div
                     key={idx}
-                    // Ensure we're passing the correct field; if your schema uses "id", use that.
                     onClick={() => {
                       console.log("🧪 Selected session id:", session.id);
                       handleLoadSessionMessages(session.id);
@@ -908,7 +976,6 @@ export default function ChatPage() {
                         {new Date(session.sessionEndTime).toLocaleString()}
                       </div>
                     )}
-                    {/* Conversation Preview */}
                     {Array.isArray(session.conversationhistory) &&
                       session.conversationhistory.length > 0 && (
                         <div className="mt-2 bg-gray-50 p-2 rounded text-xs max-h-40 overflow-y-auto">
@@ -947,8 +1014,7 @@ export default function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
         <div
-          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"
-            } overflow-hidden`}
+          className={`bg-gray-50 transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"} overflow-hidden`}
         >
           <div className="p-4">
             <h2 className="text-lg font-bold mb-4">Current Courses</h2>
@@ -1007,18 +1073,18 @@ export default function ChatPage() {
             {isSidebarOpen ? <ChevronLeft /> : <ChevronRight />}
           </button>
 
-          {/* PDF VIEWER (70% width) */}
-          <div className="w-[70%] p-4 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex justify-between items-center">
+          {/* PDF VIEWER */}
+          <div className="w-[60%] p-4 overflow-hidden flex flex-col">
+            <div className="p-2 border-b border-gray-200 bg-white shadow-sm flex justify-between items-center">
               <div className="flex items-center">
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                  className="p-2 rounded-md text-gray-500 hover:bg-gray-100 mr-2"
+                  className="p-1 rounded-md text-gray-500 hover:bg-gray-100 mr-2"
                   aria-label="Toggle sidebar"
                 >
-                  <Menu className="h-5 w-5" />
+                  <Menu className="h-4 w-4" />
                 </button>
-                <h2 className="text-xl font-bold text-gray-800">PDF Viewer</h2>
+                <h2 className="text-lg font-bold text-gray-800">PDF Viewer</h2>
               </div>
             </div>
             <div className="flex-1 h-[calc(100vh-200px)] relative">
@@ -1042,11 +1108,9 @@ export default function ChatPage() {
                     <iframe
                       src={(() => {
                         if (!pdfUrl) return "";
-                        // Use our proxy to access the PDF from the same origin
                         const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(
                           pdfUrl
                         )}`;
-                        // Add parameters to support communication and disable same-origin restrictions
                         return `/pdfjs/web/viewer.html?file=${encodeURIComponent(
                           proxyUrl
                         )}&disableXfa=true&embedded=true`;
@@ -1066,9 +1130,9 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* CHAT / QUIZ SECTION (50% width) */}
-          <div className="w-1/2 border-l border-gray-200 flex flex-col">
-            {/* Chat header */}
+          {/* CHAT / QUIZ SECTION */}
+          <div className="w-[40%] border-l border-gray-200 flex flex-col">
+            {/* Chat header with Quiz Mode toggle */}
             <div className="p-4 border-b border-gray-200 bg-white shadow-sm flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800">Chat</h2>
               <button
@@ -1079,10 +1143,18 @@ export default function ChatPage() {
               </button>
             </div>
             {isQuizMode ? (
-              // Quiz Mode UI Block
+              // NEW: Quiz Mode UI Block
               <div className="flex-1 p-4 overflow-y-auto bg-white">
                 <h2 className="text-lg font-bold mb-4">Quiz Mode</h2>
-
+                {/* NEW: Loading spinner for quiz generation */}
+                {generatingQuiz && (
+                  <div className="flex items-center justify-center mb-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-blue-500"></div>
+                    <span className="ml-2 text-blue-500 font-medium">
+                      Generating Quiz...
+                    </span>
+                  </div>
+                )}
                 {/* Collapsible Settings Panel */}
                 <div className="mb-5">
                   <button
@@ -1093,24 +1165,17 @@ export default function ChatPage() {
                       <span>Settings</span>
                       {!showQuizSettings && (
                         <span className="ml-2 text-xs text-blue-600 bg-blue-100 py-0.5 px-2 rounded-full">
-                          {quizNumQuestions} questions • {quizDifficulty}{" "}
-                          difficulty
+                          {quizNumQuestions} questions • {quizDifficulty} difficulty
                         </span>
                       )}
                     </div>
                     <svg
-                      className={`w-5 h-5 transition-transform duration-200 ${showQuizSettings ? "rotate-180" : ""
-                        }`}
+                      className={`w-5 h-5 transition-transform duration-200 ${showQuizSettings ? "rotate-180" : ""}`}
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
 
@@ -1132,9 +1197,7 @@ export default function ChatPage() {
                             max="10"
                             step="1"
                             value={quizNumQuestions}
-                            onChange={(e) =>
-                              setQuizNumQuestions(Number(e.target.value))
-                            }
+                            onChange={(e) => setQuizNumQuestions(Number(e.target.value))}
                             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                             aria-label="Number of quiz questions"
                           />
@@ -1152,11 +1215,7 @@ export default function ChatPage() {
                             {["easy", "medium", "hard"].map((level) => (
                               <button
                                 key={level}
-                                onClick={() =>
-                                  setQuizDifficulty(
-                                    level as "easy" | "medium" | "hard"
-                                  )
-                                }
+                                onClick={() => setQuizDifficulty(level as "easy" | "medium" | "hard")}
                                 className={`py-1.5 px-2 rounded-md capitalize text-sm text-center
                                   ${quizDifficulty === level
                                     ? "bg-blue-600 text-white font-medium"
@@ -1196,16 +1255,14 @@ export default function ChatPage() {
                 ) : quizQuestions.length === 0 ? (
                   <div className="p-4 bg-gray-50 rounded-md text-center">
                     <p className="text-gray-500">
-                      Configure your quiz settings and click "Generate Quiz" to
-                      begin.
+                      Configure your quiz settings and click "Generate Quiz" to begin.
                     </p>
                   </div>
                 ) : (
                   <div className="mt-2">
                     <div className="mb-3 flex justify-between items-center">
                       <span className="text-sm text-gray-600 font-medium">
-                        Question {currentQuestionIndex + 1} of{" "}
-                        {quizQuestions.length}
+                        Question {currentQuestionIndex + 1} of {quizQuestions.length}
                       </span>
                       <button
                         onClick={() => setShowQuizSettings(!showQuizSettings)}
@@ -1220,23 +1277,21 @@ export default function ChatPage() {
                         {quizQuestions[currentQuestionIndex]?.question}
                       </p>
                       <div className="flex flex-col gap-3 mt-4">
-                        {quizQuestions[currentQuestionIndex]?.options.map(
-                          (option: string, idx: number) => {
-                            const labels = ["A", "B", "C", "D"];
-                            return (
-                              <button
-                                key={idx}
-                                onClick={() => handleQuizAnswer(option)}
-                                className="p-4 rounded-lg bg-white hover:bg-blue-100 text-left border border-gray-200 transition-colors flex items-start"
-                              >
-                                <span className="inline-flex items-center justify-center bg-blue-100 text-blue-800 rounded-full h-6 w-6 min-w-6 mr-3 font-medium">
-                                  {labels[idx]}
-                                </span>
-                                <span>{option}</span>
-                              </button>
-                            );
-                          }
-                        )}
+                        {quizQuestions[currentQuestionIndex]?.options.map((option: string, idx: number) => {
+                          const labels = ["A", "B", "C", "D"];
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleQuizAnswer(option)}
+                              className="p-4 rounded-lg bg-white hover:bg-blue-100 text-left border border-gray-200 transition-colors flex items-start"
+                            >
+                              <span className="inline-flex items-center justify-center bg-blue-100 text-blue-800 rounded-full h-6 w-6 min-w-6 mr-3 font-medium">
+                                {labels[idx]}
+                              </span>
+                              <span>{option}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1252,12 +1307,10 @@ export default function ChatPage() {
                         </div>
                         <div className="p-4">
                           <div className="mb-2">
-                            <span className="font-medium">Correct answer:</span>{" "}
-                            {quizFeedback.answer}
+                            <span className="font-medium">Correct answer:</span> {quizFeedback.answer}
                           </div>
                           <div>
-                            <span className="font-medium">Explanation:</span>{" "}
-                            {quizFeedback.explanation}
+                            <span className="font-medium">Explanation:</span> {quizFeedback.explanation}
                           </div>
                         </div>
                       </div>
@@ -1337,9 +1390,7 @@ export default function ChatPage() {
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      onKeyPress={(e) =>
-                        e.key === "Enter" && handleSendMessage()
-                      }
+                      onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                       placeholder="Type your question..."
                       disabled={sendingMessage}
                       className="flex-1 border border-gray-300 rounded-l-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"

@@ -9,25 +9,36 @@ interface ClassInfo {
 const Admin: React.FC = () => {
   const classes: ClassInfo[] = [
     { title: "Introduction to Computer Programming", code: "CSCI-SHU 11" },
-    { title: "Introduction to Computer and Data Science", code: "CSCI-SHU 101" },
+    {
+      title: "Introduction to Computer and Data Science",
+      code: "CSCI-SHU 101",
+    },
     { title: "Data Structures", code: "CSCI-SHU 210" },
     { title: "Algorithms", code: "CSCI-SHU 220" },
     { title: "Computer Architecture", code: "CENG-SHU 201" },
     { title: "Operating Systems", code: "CSCI-SHU 370" },
   ];
 
-  const [selectedFiles, setSelectedFiles] = useState<{ [key: number]: File | null }>({});
+  const [selectedFiles, setSelectedFiles] = useState<{
+    [key: number]: File | null;
+  }>({});
 
-  const handleFileChange = (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (
+    idx: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFiles((prev) => ({ ...prev, [idx]: e.target.files[0] }));
+      const file = e.target.files[0];
+      setSelectedFiles((prev) => ({ ...prev, [idx]: file }));
     }
   };
 
   const handleUpload = (idx: number) => {
     const file = selectedFiles[idx];
     if (!file) return;
-    alert(`File "${file.name}" for class "${classes[idx].title}" is ready to be uploaded.`);
+    alert(
+      `File "${file.name}" for class "${classes[idx].title}" is ready to be uploaded.`
+    );
     // Here you can integrate with your backend API route.
   };
 

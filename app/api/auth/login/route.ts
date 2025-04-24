@@ -9,6 +9,22 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { email, password } = body;
 
+        // --- Professor Login Check START ---
+        // Check if the credentials match the professor's preset credentials
+        if (email === "professor@nyu.edu" && password === "8888") {
+            // Return success response with professor details (no cookie for professor)
+            return NextResponse.json({
+                success: true,
+                message: "Professor login successful",
+                user: {
+                    id: "professor", // Use a distinct ID for the professor
+                    email: "professor@nyu.edu",
+                    name: "Professor"
+                }
+            }, { status: 200 });
+        }
+        // --- Professor Login Check END ---
+
         if (!email || !password) {
             return NextResponse.json(
                 { error: "Email and password are required" },

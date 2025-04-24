@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPdfFromS3 } from "@/app/utils/s3";
 
-interface Params {
-    params: {
-        key: string[]
-    }
-}
-
 export async function GET(
     request: NextRequest,
-    context: Params
+    context: any
 ) {
     try {
         // Ensure params is properly awaited by using context
@@ -33,12 +27,12 @@ export async function GET(
         // Return PDF file with appropriate headers
         return new NextResponse(pdfBuffer, {
             headers: {
-              "Content-Type": "application/pdf",
-              "Content-Disposition": `inline; filename="${fullKey.split('/').pop()}"`,
-              "Content-Length": pdfBuffer.length.toString(),
-              "Cache-Control": "public, max-age=3600", // ✅ Cache for 1 hour (3600 seconds)
+                "Content-Type": "application/pdf",
+                "Content-Disposition": `inline; filename="${fullKey.split('/').pop()}"`,
+                "Content-Length": pdfBuffer.length.toString(),
+                "Cache-Control": "public, max-age=3600", // ✅ Cache for 1 hour (3600 seconds)
             },
-          });
+        });
     } catch (error) {
         console.error("Error fetching PDF:", error);
         return NextResponse.json(
