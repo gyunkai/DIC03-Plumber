@@ -102,17 +102,16 @@ def get_db_connection():
 
 def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
     """
-    创建或更新用户会话，保存聊天记录。
-    即使用户切换不同PDF，也保持会话连续性，不会重新创建会话。
-    
+    Create or update the user session, saving the chat history.
+    Maintains session continuity even if the user switches PDFs, avoiding session recreation.
     Args:
-        user_id (str): 用户ID
-        pdf_name (str): PDF名称
-        user_input (str): 用户输入
-        bot_response (str): 机器人回复
+        user_id (str): User ID
+        pdf_name (str): PDF name
+        user_input (str): User input
+        bot_response (str): Bot response
     """
     if not user_id:
-        print("未提供用户ID，无法保存会话")
+        print("User ID not provided, cannot save session")
         return
         
     conn = get_db_connection()
@@ -147,7 +146,7 @@ def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
                     pdf_switch_message = {
                         "timestamp": datetime.utcnow().isoformat(),
                         "sender": "system",
-                        "message": f"切换文档：从 {existing_pdf} 到 {pdf_name}"
+                        "message": f"Switched document: from {existing_pdf} to {pdf_name}"
                     }
                     conversation_history.append(pdf_switch_message)
                     
@@ -168,7 +167,7 @@ def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
                     WHERE id = %s
                 """, (Json(conversation_history), session_id))
 
-                print(f"更新现有会话 {session_id}，现有 {len(conversation_history)} 条消息")
+                print(f"Updating existing session {session_id}, now has {len(conversation_history)} messages")
 
             else:
                 # 创建新会话
@@ -180,11 +179,11 @@ def create_or_update_user_session(user_id, pdf_name, user_input, bot_response):
                     VALUES (%s, %s, %s, %s, %s)
                 """, (session_id, user_id, pdf_name, Json(conversation_history), datetime.utcnow()))
 
-                print(f"创建新会话 {session_id}")
+                print(f"Created new session {session_id}")
 
         conn.commit()
     except Exception as e:
-        print(f"会话管理错误: {e}")
+        print(f"Session management error: {e}")
         traceback.print_exc()
     finally:
         conn.close()
@@ -317,20 +316,20 @@ user_memories = {}
 
 def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/A"):
     """
-    获取或创建用户的对话记忆。对话记忆在整个会话过程中持续存在，
-    即使用户切换不同PDF也不会丢失聊天记录。
+    Get or create user's conversation memory. Conversation memory persists throughout the session,
+    even if the user switches PDFs, chat history will not be lost.
     
     Args:
-        user_id (str): 用户ID
-        user_name (str): 用户名称
-        user_email (str): 用户邮箱
+        user_id (str): User ID
+        user_name (str): User name
+        user_email (str): User email
         
     Returns:
-        dict: 包含用户记忆和个性化提示的字典
+        dict: Dictionary containing user memory and personalized prompt
     """
     # 如果用户ID不在内存中，则创建新的记忆对象
     if user_id not in user_memories:
-        print(f"创建新的用户记忆对象: {user_id}")
+        print(f"Creating new user memory object: {user_id}")
         user_memories[user_id] = {
             "memory": ConversationBufferMemory(memory_key="chat_history", return_messages=True),
             "personalized_prompt": (
@@ -360,7 +359,7 @@ def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/
                 session = cursor.fetchone()
                 if session and session[0]:
                     conversation_history = session[0]
-                    print(f"从数据库加载了 {len(conversation_history)} 条对话历史")
+                    print(f"Loaded {len(conversation_history)} conversation history entries from database")
                     
                     # 将对话历史添加到记忆对象中
                     for entry in conversation_history:
@@ -370,7 +369,7 @@ def get_user_memory(user_id: str, user_name: str = "User", user_email: str = "N/
                             user_memories[user_id]["memory"].chat_memory.add_ai_message(entry["message"])
             conn.close()
         except Exception as e:
-            print(f"加载历史对话失败: {e}")
+            print(f"Failed to load conversation history: {e}")
     else:
         # 更新最后访问时间
         user_memories[user_id]["last_access"] = datetime.utcnow()
@@ -456,9 +455,9 @@ def get_relevant_chunks(query: str, pdf_name: str = None, pdf_path: str = None, 
                                 }
                             })
                         else:
-                            print(f"警告: 行数据不完整: {row}")
+                            print(f"Warning: Incomplete row data: {row}")
                 except Exception as e:
-                    print(f"当前PDF搜索错误: {e}")
+                    print(f"Current PDF search error: {e}")
                     traceback.print_exc()
             
             # 2. 无论如何，总是尝试搜索其他PDF
@@ -501,9 +500,9 @@ def get_relevant_chunks(query: str, pdf_name: str = None, pdf_path: str = None, 
                             }
                         })
                     else:
-                        print(f"警告: 行数据不完整: {row}")
+                        print(f"Warning: Incomplete row data: {row}")
             except Exception as e:
-                print(f"其他PDF搜索错误: {e}")
+                print(f"Other PDF search error: {e}")
                 traceback.print_exc()
 
     except Exception as e:
@@ -827,9 +826,9 @@ def query():
         print(f"Query received from {user_name} (ID: {user_id}, Email: {user_email}) - {reading_info} - Quiz mode: {quiz_mode}")
         print(f"请求数据: {data}")  # 打印完整请求数据以便调试
 
-        # 如果需要重置上下文，先删除现有记忆
+        # 如果需要重置上下文，先删除现有记忆 -> If context reset is requested, delete existing memory first
         if reset_context and user_id in user_memories:
-            print(f"重置用户 {user_id} 的对话上下文")
+            print(f"Resetting conversation context for user {user_id}")
             del user_memories[user_id]
             
         # Get user-specific memory and personalized prompt
@@ -867,11 +866,11 @@ def query():
                     # 先列出示例路径以便调试
                     cursor.execute('SELECT "pdfPath" FROM "PdfChunk" LIMIT 10')
                     paths = cursor.fetchall()
-                    print(f"传入路径: '{pdf_path}'")
-                    print(f"使用前缀后的路径: '{pdf_path_with_prefix}'")
-                    print(f"数据库路径: {paths}")
+                    print(f"Incoming path: '{pdf_path}'")
+                    print(f"Path after adding prefix: '{pdf_path_with_prefix}'")
+                    print(f"Database paths: {paths}")
                     
-                    print(f"查询参数: pdf_path={pdf_path_with_prefix}, page_number={page_number}, 类型: {type(pdf_path_with_prefix)}, {type(page_number)}")
+                    print(f"Query parameters: pdf_path={pdf_path_with_prefix}, page_number={page_number}, Types: {type(pdf_path_with_prefix)}, {type(page_number)}")
                     cursor.execute("""
                         SELECT content
                         FROM "PdfChunk"
@@ -926,9 +925,9 @@ def query():
         current_pdf_contexts = []
         other_pdf_contexts = []
         
-        # 如果有结果，添加引导性说明
+        # 如果有结果，添加引导性说明 -> If there are results, add an introductory note
         if sim_chunks:
-            fallback_note = "**查询结果包含来自多个文档的内容：**\n\n"
+            fallback_note = "**Query results include content from multiple documents:**\\n\\n"
             
         for chunk in sim_chunks:
             p = chunk['metadata']['page']
@@ -961,13 +960,13 @@ def query():
             else:
                 other_pdf_contexts.append(f"{page_info}: {content}")
             
-        # 如果有当前PDF的内容，先添加
+        # 如果有当前PDF的内容，先添加 -> If there is content from the current PDF, add it first
         if current_pdf_contexts:
-            similar_contexts.append("**当前文档内容：**\n" + "\n---\n".join(current_pdf_contexts))
+            similar_contexts.append("**Current document content:**\\n" + "\\n---\\n".join(current_pdf_contexts))
         
-        # 如果有其他PDF的内容，再添加，并确保它们有明显的标注
+        # 如果有其他PDF的内容，再添加，并确保它们有明显的标注 -> If there is content from other PDFs, add it next, ensuring clear labeling
         if other_pdf_contexts:
-            # 根据文件名分组
+            # 根据文件名分组 -> Group by filename
             grouped_contexts = {}
             for ctx in other_pdf_contexts:
                 # 提取文件名
@@ -976,13 +975,13 @@ def query():
                     file_name = match.group(1)
                     grouped_contexts.setdefault(file_name, []).append(ctx)
             
-            # 添加每组内容
+            # 添加每组内容 -> Add content for each group
             for file_name, contexts in grouped_contexts.items():
-                similar_contexts.append(f"**相关文档 [{file_name}] 内容：**\n" + "\n---\n".join(contexts))
+                similar_contexts.append(f"**Related document [{file_name}] content:**\\n" + "\\n---\\n".join(contexts))
             
-        sim_section = fallback_note + "\n\n".join(similar_contexts) if similar_contexts else "无相关内容。"
+        sim_section = fallback_note + "\\n\\n".join(similar_contexts) if similar_contexts else "No related content."
 
-        # 3. 合并成最终 document_context
+        # 3. 合并成最终 document_context -> Merge into the final document_context
         if exact_context:
             document_context = (
                 f"**Current page content**:\n{exact_context}\n\n"
@@ -991,7 +990,7 @@ def query():
         else:
             document_context = sim_section
 
-        # 如果真一条都没，就给个提示
+        # 如果真一条都没，就给个提示 -> If truly nothing was found, provide a hint
         if not document_context.strip():
             document_context = "No relevant context found."
 
@@ -1004,27 +1003,27 @@ def query():
                 else:
                     # 更新系统提示，包含文档内容
                     if document_context:
-                        system = f"""你是一个专业的助手Kiwi。你将回答用户关于以下文档的问题：
+                        system = f"""You are a professional assistant named Kiwi. You will answer the user's questions about the following documents:
 
 {document_context}
 
-请注意以下要求：
-1. 如果提供了多个文档的内容，请综合分析所有文档中的相关信息，特别注意文档间的关联、补充和冲突
-2. 当不同文档间有信息冲突时，请明确指出这些冲突，并说明各个来源的观点
-3. 仅基于文档内容回答，不要使用您自己的知识
-4. 如果文档内容中没有相关信息，请诚实地说明您无法回答
-5. 引用特定文档时，请明确指出信息来源的文档名称
-6. 尽可能给出全面、准确且结构清晰的回答
-7. 如果用户询问的问题不在文档范围内，请婉拒回答
+Please adhere to the following requirements:
+1. If content from multiple documents is provided, analyze the relevant information from all documents comprehensively, paying special attention to connections, additions, and conflicts between documents.
+2. When there are conflicts between different documents, clearly point out these conflicts and explain the viewpoints from each source.
+3. Answer based solely on the document content; do not use your own knowledge.
+4. If the document content does not contain relevant information, honestly state that you cannot answer.
+5. When citing specific documents, clearly indicate the document name as the source of the information.
+6. Provide answers that are as comprehensive, accurate, and clearly structured as possible.
+7. If the user's question is outside the scope of the documents, politely decline to answer.
 
-记住，整合不同文档的相关信息是非常重要的，同时要清晰标明各个信息的来源，这样可以为用户提供更完整、可靠的回答。"""
+Remember, integrating relevant information from different documents is very important. Clearly indicate the source of each piece of information to provide the user with a more complete and reliable answer."""
                     else:
-                        system = f"""你是一个专业的助手Kiwi。请尽力回答用户的问题。
+                        system = f"""You are a professional assistant named Kiwi. Please do your best to answer the user's questions.
 
-如果无法根据已有信息回答，请诚实地告知用户，并建议用户提供更多相关信息或上传相关文档。"""
+If you cannot answer based on the available information, honestly inform the user and suggest they provide more relevant information or upload related documents."""
                     
                     # 构建最终提示，不包含对话历史
-                    final_prompt = f"{system}\n\n"
+                    final_prompt = f"{system}\\n\\n"
                     
                     if pdf_path:
                         final_prompt += f"PDF Path: {pdf_path}\n"
@@ -1096,13 +1095,13 @@ def query():
 @app.route("/load_pdf", methods=["POST"])
 def load_pdf():
     """
-    加载指定PDF文件的文档块
+    Load document chunks for a specified PDF file
     """
     data = request.get_json()
     if not data or ("pdf_path" not in data and "pdf_name" not in data):
-        return jsonify({"error": "请求中缺少'pdf_path'或'pdf_name'参数"}), 400
+        return jsonify({"error": "Missing 'pdf_path' or 'pdf_name' parameter in request"}), 400
 
-    # 优先使用pdf_path，兼容旧版本
+    # 优先使用pdf_path，兼容旧版本 -> Prioritize pdf_path, compatible with older versions
     pdf_path = data.get("pdf_path")
     pdf_name = data.get("pdf_name")
     
@@ -1147,25 +1146,25 @@ def load_pdf():
                         "page": page_number,
                         "pdf_path": path,
                         "pdf_name": name,
-                        "source": f"{path} - 第{page_number}页"
+                        "source": f"{path} - Page {page_number}"
                     }
                 })
         
         conn.close()
         
-        # 按页码排序
+        # 按页码排序 -> Sort by page number
         chunks.sort(key=lambda x: x['metadata']['page'])
         
         return jsonify({
             "status": "success", 
-            "message": f"已加载{len(chunks)}个文档块: {target}"
+            "message": f"Loaded {len(chunks)} document chunks for: {target}"
         })
     except Exception as e:
-        print(f"加载PDF错误: {str(e)}")
+        print(f"Error loading PDF: {str(e)}")
         traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": f"加载PDF失败: {str(e)}"
+            "message": f"Failed to load PDF: {str(e)}"
         }), 500
 
 @app.route("/session_history", methods=["POST"])
@@ -1241,42 +1240,51 @@ def test():
 @app.route("/generate_quiz", methods=["POST"])
 def generate_quiz():
     """
-    生成基于PDF文档的测验问题
-    接受参数:
-        - pdf_path: PDF文件路径
-        - num_questions: 生成问题数量 (默认: 1)
-        - difficulty: 问题难度 (easy, medium, hard)
-    返回:
-        - quiz: 包含选项、正确答案和解释的测验问题列表
+    Generate quiz questions based on a PDF document
+    Accepts parameters:
+        - pdf_path: Path to the PDF file
+        - num_questions: Number of questions to generate (default: 1)
+        - difficulty: Question difficulty (easy, medium, hard)
+    Returns:
+        - quiz: List of quiz questions including options, correct answer, and explanation
+    """
+    """
+    Generate quiz questions based on a PDF document
+    Accepts parameters:
+        - pdf_path: Path to the PDF file
+        - num_questions: Number of questions to generate (default: 1)
+        - difficulty: Question difficulty (easy, medium, hard)
+    Returns:
+        - quiz: List of quiz questions including options, correct answer, and explanation
     """
     try:
-        # 获取并验证输入数据
+        # 获取并验证输入数据 -> Get and validate input data
         data = request.get_json()
         if not data:
-            return jsonify({"error": "缺少请求数据"}), 400
+            return jsonify({"error": "Missing request data"}), 400
             
         if "pdf_path" not in data:
-            return jsonify({"error": "缺少 'pdf_path' 参数"}), 400
+            return jsonify({"error": "Missing 'pdf_path' parameter"}), 400
 
         pdf_path = data["pdf_path"]
-        # 添加路径前缀处理
+        # 添加路径前缀处理 -> Add path prefix handling
         if pdf_path and not pdf_path.startswith('public/'):
             pdf_path = 'public/' + pdf_path
             
         num_questions = int(data.get("num_questions", 1))
         difficulty = data.get("difficulty", "medium").lower()
         
-        # 验证难度级别
+        # 验证难度级别 -> Validate difficulty level
         if difficulty not in ["easy", "medium", "hard"]:
             difficulty = "medium"
         
-        print(f"收到测验请求 - PDF路径: {pdf_path}, 问题数: {num_questions}, 难度: {difficulty}")
+        print(f"Received quiz request - PDF Path: {pdf_path}, Num Questions: {num_questions}, Difficulty: {difficulty}")
         
-        # 获取文档块
+        # 获取文档块 -> Get document chunks
         try:
-            chunks_result = get_relevant_chunks("重要概念和信息", None, pdf_path, k=15)
+            chunks_result = get_relevant_chunks("Key concepts and information", None, pdf_path, k=15)
             
-            # 正确处理返回值
+            # 正确处理返回值 -> Correctly handle return value
             if isinstance(chunks_result, tuple):
                 chunks, used_fallback = chunks_result
             else:
@@ -1285,85 +1293,85 @@ def generate_quiz():
                 
             if not chunks:
                 return jsonify({
-                    "error": f"未找到PDF内容: {pdf_path}"
+                    "error": f"Could not find PDF content for: {pdf_path}"
                 }), 404
                 
-            print(f"找到{len(chunks)}个用于生成测验的内容块")
+            print(f"Found {len(chunks)} content chunks for quiz generation")
         except Exception as chunk_error:
-            print(f"获取文档块出错: {str(chunk_error)}")
+            print(f"Error getting document chunks: {str(chunk_error)}")
             print(traceback.format_exc())
             return jsonify({
-                "error": f"获取文档内容失败: {str(chunk_error)}"
+                "error": f"Failed to get document content: {str(chunk_error)}"
             }), 500
         
-        # 编译文档上下文
+        # 编译文档上下文 -> Compile document context
         document_context = "\n---\n".join(
-            f"[{chunk['metadata']['pdf_path']} - 第{chunk['metadata']['page']}页]: {chunk['content']}"
+            f"[{chunk['metadata']['pdf_path']} - Page {chunk['metadata']['page']}]: {chunk['content']}"
             for chunk in chunks
         )
         
-        # 创建测验生成提示
-        quiz_prompt = f"""基于以下文档内容，创建{num_questions}个{difficulty}难度级别的多选题。
+        # 创建测验生成提示 -> Create quiz generation prompt
+        quiz_prompt = f"""Based on the following document content, create {num_questions} multiple-choice questions at {difficulty} difficulty level.
         
-内容:
+Content:
 {document_context}
 
-每个问题需要:
-1. 创建一个关于内容的清晰具体的{difficulty}难度问题
-2. 提供4个选项(标记为A, B, C, D)
-3. 指明哪个选项是正确的
-4. 提供简明的解释说明为什么该答案是正确的
+Each question should:
+1. Create a clear and specific {difficulty} difficulty question about the content.
+2. Provide 4 options (labeled A, B, C, D).
+3. Indicate which option is correct.
+4. Provide a concise explanation of why the answer is correct.
 
-难度指南:
-- Easy: 对文本中明确事实的基本回忆，有明显答案的直接问题
-- Medium: 概念理解，需要一些分析或连接不同想法
-- Hard: 概念应用，需要更深入的理解、分析和批判性思维
+Difficulty Guide:
+- Easy: Basic recall of explicit facts from the text, direct questions with obvious answers.
+- Medium: Conceptual understanding, requiring some analysis or connection of different ideas.
+- Hard: Application of concepts, requiring deeper understanding, analysis, and critical thinking.
 
-请以有效的JSON数组格式返回，结构如下:
+Please return in a valid JSON array format with the following structure:
 [
   {{
-    "question": "问题文本",
-    "options": ["A. 选项1", "B. 选项2", "C. 选项3", "D. 选项4"],
-    "correctAnswer": "选项X",
-    "explanation": "为什么这是正确答案"
+    "question": "Question text",
+    "options": ["A. Option 1", "B. Option 2", "C. Option 3", "D. Option 4"],
+    "correctAnswer": "Option X",
+    "explanation": "Why this is the correct answer"
   }}
 ]
 
-只生成关于提供内容的具体问题。如果内容不足，可以返回更少的问题。
+Only generate specific questions about the provided content. If the content is insufficient, you may return fewer questions.
 """
 
-        # 使用LLM生成测验
+        # 使用LLM生成测验 -> Generate quiz using LLM
         try:
-            print("发送测验生成提示到LLM...")
+            print("Sending quiz generation prompt to LLM...")
             response = llm.invoke(quiz_prompt)
             response_text = response.content.strip()
-            print(f"收到LLM响应 ({len(response_text)} 字符)")
+            print(f"Received LLM response ({len(response_text)} characters)")
         except Exception as llm_error:
-            print(f"调用LLM出错: {str(llm_error)}")
+            print(f"Error calling LLM: {str(llm_error)}")
             print(traceback.format_exc())
             return jsonify({
-                "error": f"AI模型错误: {str(llm_error)}"
+                "error": f"AI model error: {str(llm_error)}"
             }), 500
         
-        # 从响应中提取JSON (处理潜在的格式问题)
+        # 从响应中提取JSON (处理潜在的格式问题) -> Extract JSON from response (handle potential formatting issues)
         try:
-            print("解析LLM响应为JSON...")
+            print("Parsing LLM response as JSON...")
             json_match = re.search(r'\[[\s\S]*\]', response_text)
             if json_match:
                 json_str = json_match.group(0)
                 quiz_data = json.loads(json_str)
-                print(f"成功解析测验数据: {len(quiz_data)} 个问题")
+                print(f"Successfully parsed quiz data: {len(quiz_data)} questions")
             else:
-                # JSON提取失败的后备方案
-                print("无法从响应中提取JSON")
+                # JSON提取失败的后备方案 -> Fallback if JSON extraction fails
+                print("Could not extract JSON from response")
                 return jsonify({
-                    "error": "无法生成格式正确的测验问题"
+                    "error": "Could not generate correctly formatted quiz questions"
                 }), 500
         except json.JSONDecodeError as json_error:
-            print(f"JSON解析错误: {str(json_error)}")
-            print(f"响应文本: {response_text}")
+            print(f"JSON parsing error: {str(json_error)}")
+            print(f"Response text: {response_text}")
             return jsonify({
-                "error": f"解析生成的测验出错: {str(json_error)}"
+                "error": f"Error parsing generated quiz: {str(json_error)}"
             }), 500
         
         return jsonify({
@@ -1371,10 +1379,10 @@ def generate_quiz():
         })
         
     except Exception as e:
-        print(f"生成测验出错: {str(e)}")
+        print(f"Error generating quiz: {str(e)}")
         print(traceback.format_exc())
         return jsonify({
-            "error": f"生成测验失败: {str(e)}"
+            "error": f"Failed to generate quiz: {str(e)}"
         }), 500
 
 if __name__ == "__main__":
