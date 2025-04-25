@@ -16,3 +16,11 @@ next-env.d.ts
 __pycache__/
 
 venv/
+
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.aac
+*.flac
+*.alac
