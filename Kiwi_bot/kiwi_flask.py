@@ -1274,7 +1274,7 @@ def generate_quiz():
         
         # 获取文档块
         try:
-            chunks_result = get_relevant_chunks("重要概念和信息", None, pdf_path, k=30)
+            chunks_result = get_relevant_chunks("重要概念和信息", None, pdf_path, k=15)
             
             # 正确处理返回值
             if isinstance(chunks_result, tuple):

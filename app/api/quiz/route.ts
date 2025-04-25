@@ -12,20 +12,16 @@ export async function POST(req: NextRequest) {
         if (!pdfKey) {
             return NextResponse.json({ error: "PDF key is required" }, { status: 400 });
         }
-
+        console.log("pdfKey", pdfKey);
         // Extract just the filename from the path if it exists
         let filename = pdfKey;
-        if (pdfKey && pdfKey.includes('/')) {
-            filename = pdfKey.split('/').pop();
-        } else if (pdfKey && pdfKey.includes('\\')) {
-            filename = pdfKey.split('\\').pop();
-        }
+
 
         console.log(`Generating quiz for PDF: ${filename}, Questions: ${numberOfQuestions}, Difficulty: ${difficulty}`);
 
         // Forward quiz generation request to kiwi bot
         const requestBody = {
-            pdf_name: filename,
+            pdf_path: filename,
             num_questions: numberOfQuestions,
             difficulty: difficulty
         };
